@@ -9,7 +9,7 @@ import {
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
-import { vBinIdAndPrice, vDepositedToken, vLiquidityStrategy, vPairToken } from "../../schema/dlmmPosition";
+import { vBinIdAndPrice, vLiquidityStrategy } from "../../schema/positions";
 import { authenticateUser } from "../../privy";
 import { buildTitanSwapTransaction } from "../../helpers/buildTitanSwapTransaction";
 import { action } from "../../_generated/server";
@@ -17,12 +17,24 @@ import { getServerSwapQuote, QuoteDetails } from "../../services/mnmServer";
 import { ActionRes } from "../../types/actionResults";
 import { connection } from "../../convexEnv";
 import { buildTipTx, sendAndConfirmJitoBundle } from "../../helpers/jito";
-// import { getJupiterTokenPrices } from "../../services/jupiter";
-// import { toAddress } from "../../utils/address";
-// import { api } from "../../_generated/api";
 import { SwapQuotes } from "../../helpers/normalizeServerSwapQuote";
 import BN from "bn.js";
 import { amountToRawAmount } from "../../utils/amounts";
+import { getJupiterTokenPrices } from "../../services/jupiter";
+import { toAddress } from "../../utils/solana";
+import { api } from "../../_generated/api";
+
+export const vCollateralToken = v.object({
+  mint: v.string(),
+  decimals: v.number(),
+  amount: v.number(),
+});
+
+export const vPairToken = v.object({
+  mint: v.string(),
+  decimals: v.number(),
+  split: v.number(), // must be between 0-1
+});
 
 export const createPosition = action({
   args: {
@@ -31,7 +43,7 @@ export const createPosition = action({
     autoCompoundSplit: v.number(),
     minBin: vBinIdAndPrice,
     maxBin: vBinIdAndPrice,
-    depositedToken: vDepositedToken,
+    collateral: vCollateralToken,
     tokenX: vPairToken,
     tokenY: vPairToken,
     strategyTypeString: vLiquidityStrategy,
@@ -42,7 +54,7 @@ export const createPosition = action({
       const {
         tokenX,
         tokenY,
-        depositedToken,
+        collateral,
         maxBin,
         minBin,
         poolAddress,
@@ -56,15 +68,15 @@ export const createPosition = action({
 
       const swapQuotes = await Promise.all(getSwapQuotes);
 
-      const { xRawAmount, yRawAmount, depositedTokenRawAmount } = getPairAmounts({
+      const { xRawAmount, yRawAmount, collateralRawAmount } = getPairAmounts({
         swapQuotes,
-        depositedToken,
+        collateral,
         tokenX,
         tokenY,
       });
 
       const { blockhash } = await connection.getLatestBlockhash();
-      const { tipTx, cuPriceMicroLamports, cuLimit } = await buildTipTx({
+      const { tipTx, cuPriceMicroLamports, cuLimit, tipInLamp } = await buildTipTx({
         speed: "extraFast",
         payerAddress: userWallet.address,
         recentBlockhash: blockhash,
@@ -78,7 +90,7 @@ export const createPosition = action({
           }
           const { instructions, addressLookupTables } = quote;
           return buildTitanSwapTransaction({
-            userAddress: user.address,
+            userAddress: userWallet.address,
             instructions,
             lookupTables: addressLookupTables,
             options: {
@@ -91,7 +103,7 @@ export const createPosition = action({
       );
 
       const { createPositionTx, positionPubkey } = await buildCreatePositionTx({
-        userAddress: user.address,
+        userAddress: userWallet.address,
         poolAddress,
         xRawAmount,
         yRawAmount,
@@ -107,89 +119,92 @@ export const createPosition = action({
         },
       });
 
-      // const getTokenPrices = getJupiterTokenPrices({
-      //   mints: [toAddress(depositedToken.mint), toAddress(tokenX.mint), toAddress(tokenY.mint)],
-      // });
-
-      await sendAndConfirmJitoBundle({
-        userWallet,
-        txs: [...swapsTxs, createPositionTx, tipTx],
+      const getTokenPrices = getJupiterTokenPrices({
+        mints: [toAddress(collateral.mint), toAddress(tokenX.mint), toAddress(tokenY.mint)],
       });
 
-      // const [transactionIds, tokenPrices] = await Promise.all([sendBundle, getTokenPrices]);
+      const sendBundle = sendAndConfirmJitoBundle({
+        userWallet,
+        transactions: [...swapsTxs, createPositionTx, tipTx],
+      });
 
-      // const tokenDetails = {
-      //   depositedToken: {
-      //     mint: depositedToken.mint,
-      //     rawAmount: depositedTokenRawAmount,
-      //     usdPrice: tokenPrices[toAddress(depositedToken.mint)]?.usdPrice ?? 0,
-      //   },
-      //   tokenX: {
-      //     mint: tokenX.mint,
-      //     rawAmount: xRawAmount.toNumber(), //TODO: change to string?
-      //     usdPrice: tokenPrices[toAddress(tokenX.mint)]?.usdPrice ?? 0,
-      //   },
-      //   tokenY: {
-      //     mint: tokenY.mint,
-      //     rawAmount: yRawAmount.toNumber(),
-      //     usdPrice: tokenPrices[toAddress(tokenY.mint)]?.usdPrice ?? 0,
-      //   },
-      // };
+      const [txIds, tokenPrices] = await Promise.all([sendBundle, getTokenPrices]);
 
-      // const swapTransactionsWithDes = [
-      //   ...swapsTxs.map((_, i) => {
-      //     return {
-      //       id: transactionIds[i],
-      //       description: `Swap #${i + 1}`,
-      //     };
-      //   }),
-      // ];
+      const tokenDetails = {
+        collateral: {
+          mint: collateral.mint,
+          rawAmount: collateralRawAmount,
+          usdPrice: tokenPrices[toAddress(collateral.mint)]?.usdPrice ?? 0,
+        },
+        tokenX: {
+          mint: tokenX.mint,
+          rawAmount: xRawAmount.toNumber(),
+          usdPrice: tokenPrices[toAddress(tokenX.mint)]?.usdPrice ?? 0,
+        },
+        tokenY: {
+          mint: tokenY.mint,
+          rawAmount: yRawAmount.toNumber(),
+          usdPrice: tokenPrices[toAddress(tokenY.mint)]?.usdPrice ?? 0,
+        },
+      };
 
-      // const [activityId] = await Promise.all([
-      //   ctx.runMutation(api.tables.activities.mutations.insertCreatePositionActivity, {
-      //     userId: user._id,
-      //     status: "success",
-      //     details: {
-      //       poolAddress,
-      //       positionPubkey,
-      //       range: `${minBin.price}-${maxBin.price}`,
-      //       price: 1,
-      //       ...tokenDetails,
-      //     },
-      //     transactionIds: [
-      //       ...swapTransactionsWithDes,
-      //       {
-      //         id: transactionIds[swapTransactionsWithDes.length],
-      //         description: "Create DLMM Position",
-      //       },
-      //       {
-      //         id: transactionIds[swapTransactionsWithDes.length + 1],
-      //         description: "Jito Tip",
-      //       },
-      //     ],
-      //   }),
-      //   ctx.runMutation(api.tables.DLMMPositions.mutations.createConvexDLMMPosition, {
-      //     newPosition: {
-      //       userId: user._id,
-      //       poolAddress,
-      //       autoCompoundSplit,
-      //       positionPubkey,
-      //       strategy: strategyTypeString,
-      //       isActive: true,
-      //       lowerBin: minBin,
-      //       upperBin: maxBin,
-      //       ...tokenDetails,
-      //     },
-      //   }),
-      // ]);
+      const swapTransactionsWithDes = [
+        ...swapsTxs.map((_, i) => {
+          return {
+            id: txIds[i],
+            description: `Swap #${i + 1}`,
+          };
+        }),
+      ];
+
+      const transactionIds = [
+        ...swapTransactionsWithDes,
+        {
+          id: txIds[swapTransactionsWithDes.length],
+          description: "Create DLMM Position",
+        },
+        {
+          id: txIds[swapTransactionsWithDes.length + 1],
+          description: "Jito Tip",
+        },
+      ];
+
+      const [activityId] = await Promise.all([
+        ctx.runMutation(api.tables.activities.mutations.createActivity, {
+          input: {
+            type: "create_position",
+            relatedPositionPubkey: positionPubkey,
+            transactionIds,
+            details: {
+              poolAddress,
+              positionType: "DLMM",
+              jitoTipLamports: tipInLamp,
+              range: `${minBin.price}-${maxBin.price}`,
+              ...tokenDetails,
+            },
+          },
+        }),
+
+        ctx.runMutation(api.tables.positions.mutations.insertPosition, {
+          type: "DLMM",
+          poolAddress,
+          positionPubkey,
+          details: {
+            autoCompoundSplit,
+            lowerBin: minBin,
+            upperBin: maxBin,
+            liquidityStrategy: strategyTypeString,
+          },
+          ...tokenDetails,
+        }),
+      ]);
 
       return {
         status: "success",
-        result: {},
-        // result: {
-        //   activityId,
-        //   positionPubkey,
-        // },
+        result: {
+          activityId,
+          positionPubkey,
+        },
       };
     } catch (error: any) {
       console.error("CreatePosition failed:", error);
@@ -203,18 +218,18 @@ export const createPosition = action({
 
 export function getPairAmounts({
   swapQuotes,
-  depositedToken,
+  collateral,
   tokenX,
   tokenY,
 }: {
   swapQuotes: SwapQuotes[];
-  depositedToken: Infer<typeof vDepositedToken>;
+  collateral: Infer<typeof vCollateralToken>;
   tokenX: Infer<typeof vPairToken>;
   tokenY: Infer<typeof vPairToken>;
 }) {
-  const depositedTokenRawAmount = amountToRawAmount(depositedToken.amount, depositedToken.decimals);
-  const rawAmountTokenX = Math.floor(depositedTokenRawAmount * tokenX.split);
-  const rawAmountTokenY = Math.floor(depositedTokenRawAmount * tokenY.split);
+  const collateralRawAmount = amountToRawAmount(collateral.amount, collateral.decimals);
+  const rawAmountTokenX = Math.floor(collateralRawAmount * tokenX.split);
+  const rawAmountTokenY = Math.floor(collateralRawAmount * tokenY.split);
 
   let xRawAmount: BN = new BN(0);
   let yRawAmount: BN = new BN(0);
@@ -232,15 +247,15 @@ export function getPairAmounts({
   }
 
   // if no swap exists for one leg, that side keeps its portion in original token
-  if (xRawAmount.isZero() && depositedToken.mint === tokenX.mint) {
+  if (xRawAmount.isZero() && collateral.mint === tokenX.mint) {
     xRawAmount = new BN(rawAmountTokenX);
   }
 
-  if (yRawAmount.isZero() && depositedToken.mint === tokenY.mint) {
+  if (yRawAmount.isZero() && collateral.mint === tokenY.mint) {
     yRawAmount = new BN(rawAmountTokenY);
   }
 
-  return { xRawAmount, yRawAmount, depositedTokenRawAmount };
+  return { xRawAmount, yRawAmount, collateralRawAmount };
 }
 
 async function buildCreatePositionTx({

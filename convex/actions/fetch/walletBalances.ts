@@ -3,7 +3,7 @@ import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { action, ActionCtx } from "../../_generated/server";
 import { v } from "convex/values";
 import { connection } from "../../convexEnv";
-import { Address } from "../../utils/address";
+import { Address } from "../../utils/solana";
 import { api } from "../../_generated/api";
 import { TokenMetadata } from "../../services/jupiter";
 import { AccountLayout, NATIVE_MINT, TOKEN_2022_PROGRAM_ID, TOKEN_PROGRAM_ID } from "@solana/spl-token";

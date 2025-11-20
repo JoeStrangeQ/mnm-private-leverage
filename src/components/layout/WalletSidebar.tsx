@@ -24,7 +24,7 @@ import { abbreviateAmount, formatUsdValue, tokenAmountFormatter } from "~/utils/
 import { abbreviateAddress } from "~/utils/solana";
 import { MnMIcon } from "../icons/MnMIcon";
 import { useBalances, useTotalUsdBalance } from "~/states/balances";
-import { toAddress } from "../../../convex/utils/address";
+import { toAddress } from "../../../convex/utils/solana";
 import { Button } from "../ui/Button";
 
 export function WalletSidebar({ user, onClose }: { user: Doc<"users">; onClose: () => void }) {

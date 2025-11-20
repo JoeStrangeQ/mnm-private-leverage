@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { v4 as randomUUID } from "uuid";
 import { SwapQuotes } from "~/services/mnmServer/types";
 import { useConvexUser } from "~/providers/UserStates";
-import { Address } from "../../convex/utils/address";
+import { Address } from "../../convex/utils/solana";
 import { useMnMServerClient } from "./useMnMServer";
 
 export function useSwapQuote({
@@ -41,7 +41,7 @@ export function useSwapQuote({
           streamId,
         });
       } catch (err) {
-        console.error("❌ Failed to start quote streaming:", err);
+        console.error("Failed to start quote streaming:", err);
       }
     };
 

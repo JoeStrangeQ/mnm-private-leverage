@@ -4,7 +4,7 @@ import { api } from "../../convex/_generated/api";
 import { TOKENS_METADATA } from "~/utils/solana";
 import { MS_1M } from "../../convex/utils/timeframe";
 import { TokenMetadata } from "../../convex/services/jupiter";
-import { Address } from "../../convex/utils/address";
+import { Address } from "../../convex/utils/solana";
 
 export function useToken({ mint }: { mint: Address }): TokenMetadata {
   const fetchTokenMetadata = useAction(api.actions.fetch.tokenMetadata.getTokensMetadataAction);

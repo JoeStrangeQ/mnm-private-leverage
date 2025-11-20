@@ -9,6 +9,7 @@
  */
 
 import type * as actions_dlmmPosition_createPosition from "../actions/dlmmPosition/createPosition.js";
+import type * as actions_dlmmPosition_removeLiquidity from "../actions/dlmmPosition/removeLiquidity.js";
 import type * as actions_fetch_dlmm from "../actions/fetch/dlmm.js";
 import type * as actions_fetch_tokenMetadata from "../actions/fetch/tokenMetadata.js";
 import type * as actions_fetch_tokenPrices from "../actions/fetch/tokenPrices.js";
@@ -17,19 +18,27 @@ import type * as convexEnv from "../convexEnv.js";
 import type * as helpers_buildTitanSwapTransaction from "../helpers/buildTitanSwapTransaction.js";
 import type * as helpers_jito from "../helpers/jito.js";
 import type * as helpers_normalizeServerSwapQuote from "../helpers/normalizeServerSwapQuote.js";
+import type * as helpers_simulateAndGetTokensBalance from "../helpers/simulateAndGetTokensBalance.js";
 import type * as privy from "../privy.js";
-import type * as schema_dlmmPosition from "../schema/dlmmPosition.js";
+import type * as schema_activities from "../schema/activities.js";
+import type * as schema_positions from "../schema/positions.js";
 import type * as services_jito from "../services/jito.js";
 import type * as services_jupiter from "../services/jupiter.js";
 import type * as services_meteora from "../services/meteora.js";
 import type * as services_mnmServer from "../services/mnmServer.js";
+import type * as services_solana from "../services/solana.js";
+import type * as tables_activities_get from "../tables/activities/get.js";
+import type * as tables_activities_mutations from "../tables/activities/mutations.js";
+import type * as tables_positions_get from "../tables/positions/get.js";
+import type * as tables_positions_mutations from "../tables/positions/mutations.js";
 import type * as tables_users_get from "../tables/users/get.js";
 import type * as tables_users_mutations from "../tables/users/mutations.js";
 import type * as types_actionResults from "../types/actionResults.js";
+import type * as types_solanaRpcValidations from "../types/solanaRpcValidations.js";
 import type * as types_titanSwapQuote from "../types/titanSwapQuote.js";
-import type * as utils_address from "../utils/address.js";
 import type * as utils_amounts from "../utils/amounts.js";
 import type * as utils_meteora from "../utils/meteora.js";
+import type * as utils_solana from "../utils/solana.js";
 import type * as utils_timeframe from "../utils/timeframe.js";
 import type * as utils_tryCatch from "../utils/tryCatch.js";
 
@@ -41,6 +50,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "actions/dlmmPosition/createPosition": typeof actions_dlmmPosition_createPosition;
+  "actions/dlmmPosition/removeLiquidity": typeof actions_dlmmPosition_removeLiquidity;
   "actions/fetch/dlmm": typeof actions_fetch_dlmm;
   "actions/fetch/tokenMetadata": typeof actions_fetch_tokenMetadata;
   "actions/fetch/tokenPrices": typeof actions_fetch_tokenPrices;
@@ -49,19 +59,27 @@ declare const fullApi: ApiFromModules<{
   "helpers/buildTitanSwapTransaction": typeof helpers_buildTitanSwapTransaction;
   "helpers/jito": typeof helpers_jito;
   "helpers/normalizeServerSwapQuote": typeof helpers_normalizeServerSwapQuote;
+  "helpers/simulateAndGetTokensBalance": typeof helpers_simulateAndGetTokensBalance;
   privy: typeof privy;
-  "schema/dlmmPosition": typeof schema_dlmmPosition;
+  "schema/activities": typeof schema_activities;
+  "schema/positions": typeof schema_positions;
   "services/jito": typeof services_jito;
   "services/jupiter": typeof services_jupiter;
   "services/meteora": typeof services_meteora;
   "services/mnmServer": typeof services_mnmServer;
+  "services/solana": typeof services_solana;
+  "tables/activities/get": typeof tables_activities_get;
+  "tables/activities/mutations": typeof tables_activities_mutations;
+  "tables/positions/get": typeof tables_positions_get;
+  "tables/positions/mutations": typeof tables_positions_mutations;
   "tables/users/get": typeof tables_users_get;
   "tables/users/mutations": typeof tables_users_mutations;
   "types/actionResults": typeof types_actionResults;
+  "types/solanaRpcValidations": typeof types_solanaRpcValidations;
   "types/titanSwapQuote": typeof types_titanSwapQuote;
-  "utils/address": typeof utils_address;
   "utils/amounts": typeof utils_amounts;
   "utils/meteora": typeof utils_meteora;
+  "utils/solana": typeof utils_solana;
   "utils/timeframe": typeof utils_timeframe;
   "utils/tryCatch": typeof utils_tryCatch;
 }>;

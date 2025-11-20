@@ -2,7 +2,7 @@
 import { v } from "convex/values";
 import { action, internalAction } from "../../_generated/server";
 import { getJupiterTokenPrices, JupTokenPrices } from "../../services/jupiter";
-import { zAddress } from "../../utils/address";
+import { zAddress } from "../../utils/solana";
 import z from "zod";
 import { ActionCache } from "@convex-dev/action-cache";
 import { components, internal } from "../../_generated/api";

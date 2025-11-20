@@ -9,6 +9,7 @@ import {
 
 import { privy, privyAuthContext, PrivyWallet } from "../privy";
 import { getJitoBundleStatus, getJitoInflightBundleStatus, getJitoTipInfo, sendJitoBundle } from "../services/jito";
+import { toVersioned } from "../utils/solana";
 
 const CU_LIMIT = 1_400_000;
 const JITO_TIP_ACCOUNTS = [
@@ -24,13 +25,14 @@ const JITO_TIP_ACCOUNTS = [
 export type TipSpeed = "low" | "medium" | "fast" | "extraFast";
 
 export async function sendAndConfirmJitoBundle({
-  txs,
+  transactions,
   userWallet,
 }: {
-  txs: Transaction[] | VersionedTransaction[];
+  transactions: Transaction[] | VersionedTransaction[];
   userWallet: PrivyWallet;
 }) {
-  const signTransactions = txs.map((tx) =>
+  const versionedTransactions = transactions.map((tx) => toVersioned(tx));
+  const signTransactions = versionedTransactions.map((tx) =>
     privy
       .wallets()
       .solana()

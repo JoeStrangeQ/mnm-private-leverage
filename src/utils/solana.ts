@@ -1,4 +1,4 @@
-import { Address, zAddress } from "../../convex/utils/address";
+import { Address, zAddress } from "../../convex/utils/solana";
 
 type LocalTokenMetadata = {
   name: string;

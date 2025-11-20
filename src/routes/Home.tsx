@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "~/components/ui/Button";
 import { useSwapQuote } from "~/states/swap";
-import { Address, toAddress } from "../../convex/utils/address";
+import { Address, toAddress } from "../../convex/utils/solana";
 import { MnMSuspense } from "~/components/MnMSuspense";
 import { Skeleton } from "~/components/ui/Skeleton";
 import { LabelValueRow } from "~/components/ui/labelValueRow";
@@ -117,7 +117,7 @@ function SwapQuotesDisplay() {
               price: parseFloat(upperBin.pricePerToken),
             },
             strategyTypeString: "Spot",
-            depositedToken: {
+            collateral: {
               amount: 0.007,
               decimals: 9,
               mint: inputMint,

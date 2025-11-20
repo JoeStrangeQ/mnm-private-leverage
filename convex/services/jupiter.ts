@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Address, zAddress } from "../utils/address";
+import { Address, zAddress } from "../utils/solana";
 import { JUPITER_API_KEY } from "../convexEnv";
 
 const JupTokenPriceZ = z.record(zAddress, z.object({ usdPrice: z.number() }));

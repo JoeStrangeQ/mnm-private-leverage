@@ -1,6 +1,8 @@
+import { Transaction, VersionedTransaction } from "@solana/web3.js";
 import bs58 from "bs58";
 import z from "zod";
 
+export const SOL_MINT = "So11111111111111111111111111111111111111112" as const;
 export const Base58Z = ({
   invalid_type_error,
   required_error,
@@ -33,4 +35,17 @@ export type Address = z.infer<typeof zAddress>;
 
 export function toAddress(value: string) {
   return zAddress.parse(value);
+}
+
+export function isVersionedTransaction(
+  transaction: Transaction | VersionedTransaction
+): transaction is VersionedTransaction {
+  return "version" in transaction;
+}
+
+export function toVersioned(tx: Transaction | VersionedTransaction): VersionedTransaction {
+  if (isVersionedTransaction(tx)) {
+    return tx;
+  }
+  return new VersionedTransaction(tx.compileMessage());
 }
