@@ -5,7 +5,7 @@ globalThis.Buffer = Buffer;
 
 import { ConvexError, v } from "convex/values";
 import { AuthorizationContext, PrivyClient, User } from "@privy-io/node";
-import { action, ActionCtx } from "./_generated/server";
+import { action, ActionCtx, MutationCtx } from "./_generated/server";
 import { PRIVY_APP_ID, PRIVY_APP_SECRET, PRIVY_SIGNER_PRIVATE_KEY } from "./convexEnv";
 import { api, internal } from "./_generated/api";
 import { Doc } from "./_generated/dataModel";
@@ -64,7 +64,11 @@ export const authenticate = action({
   },
 });
 
-export async function authenticateUser({ ctx }: { ctx: ActionCtx }) {
+export async function authenticateUser({ ctx }: { ctx: ActionCtx | MutationCtx }): Promise<{
+  user: Doc<"users"> | null;
+  privyUser: User;
+  userWallet: PrivyWallet;
+}> {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) throw new ConvexError("unauthorized");
 

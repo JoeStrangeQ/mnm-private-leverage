@@ -3,7 +3,7 @@ import { api } from "../../convex/_generated/api";
 import { useSuspenseQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { MS_1M } from "../../convex/utils/timeframe";
-import { Address, zAddress } from "../../convex/utils/address";
+import { Address, zAddress } from "../../convex/utils/solana";
 import { useToken } from "./tokens";
 
 export function useBalances({ address }: { address: Address }) {

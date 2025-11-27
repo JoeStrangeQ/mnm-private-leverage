@@ -1,9 +1,8 @@
 import { RotateCw } from "lucide-react";
-// import { useBalances } from '~/states/balances'
 import { MnMSuspense } from "./MnMSuspense";
 import { cn } from "~/utils/cn";
 import { useBalances } from "~/states/balances";
-import { toAddress } from "../../convex/utils/address";
+import { toAddress } from "../../convex/utils/solana";
 
 export function RefreshTokenBalancesIcon({
   userAddress,

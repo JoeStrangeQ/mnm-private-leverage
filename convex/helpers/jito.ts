@@ -9,6 +9,7 @@ import {
 
 import { privy, privyAuthContext, PrivyWallet } from "../privy";
 import { getJitoBundleStatus, getJitoInflightBundleStatus, getJitoTipInfo, sendJitoBundle } from "../services/jito";
+import { toVersioned } from "../utils/solana";
 
 const CU_LIMIT = 1_400_000;
 const JITO_TIP_ACCOUNTS = [
@@ -24,13 +25,14 @@ const JITO_TIP_ACCOUNTS = [
 export type TipSpeed = "low" | "medium" | "fast" | "extraFast";
 
 export async function sendAndConfirmJitoBundle({
-  txs,
+  transactions,
   userWallet,
 }: {
-  txs: Transaction[] | VersionedTransaction[];
+  transactions: Transaction[] | VersionedTransaction[];
   userWallet: PrivyWallet;
 }) {
-  const signTransactions = txs.map((tx) =>
+  const versionedTransactions = transactions.map((tx) => toVersioned(tx));
+  const signTransactions = versionedTransactions.map((tx) =>
     privy
       .wallets()
       .solana()
@@ -43,13 +45,16 @@ export async function sendAndConfirmJitoBundle({
   );
 
   const bundleBase64Txs = await Promise.all(signTransactions);
-  // const sim = await simulateBundle(bundleBase64Txs)
-  // const failedTxSim = sim.transactionResults.find((s) => s.err)
+  console.log("Bundle", bundleBase64Txs);
+  // const sim = await simulateBundle(bundleBase64Txs);
+  // const failedTxSim = sim.transactionResults.find((s) => s.err);
   // if (failedTxSim) {
-  //   throw new Error(
-  //     `Simulation failed: ${failedTxSim.err?.message ?? JSON.stringify(failedTxSim.err)}`,
-  //   )
+  //   throw new Error(`Simulation failed: ${failedTxSim.err?.message ?? JSON.stringify(failedTxSim.err)}`);
   // }
+
+  // console.log("Sim", JSON.stringify(sim, undefined, 2));
+
+  console.log("Bundledtxs", bundleBase64Txs);
 
   const { bundleId } = await sendJitoBundle(bundleBase64Txs);
   const finalStatus = await confirmInflightBundle({ bundleId });
@@ -61,7 +66,7 @@ export async function sendAndConfirmJitoBundle({
     throw new Error(`Bundle ${bundleId} landed but no txs returned.`);
   }
 
-  return finalStatus.txs;
+  return { bundleId, txIds: finalStatus.txs };
 }
 
 export async function confirmInflightBundle({
@@ -106,7 +111,7 @@ export async function buildTipTx({
   recentBlockhash: string;
   speed: TipSpeed;
 }) {
-  const tipInLamp = await getTipLamportsForSpeed(speed);
+  const tipInLamp = 1_000_000; //await getTipLamportsForSpeed(speed);
   const tipAccount = new PublicKey(JITO_TIP_ACCOUNTS[Date.now() % JITO_TIP_ACCOUNTS.length]);
   const payer = new PublicKey(payerAddress);
 
