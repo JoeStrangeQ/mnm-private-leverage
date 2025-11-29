@@ -27,7 +27,11 @@ export function useBinsAroundActiveBin({
 
       const activeIndex = binsAroundActiveBin.bins.findIndex((b) => b.binId === binsAroundActiveBin.activeBin);
       // 69 bins with current price bin centered
-      const initialBins = binsAroundActiveBin.bins.slice(Math.max(0, activeIndex - 35), activeIndex + 35);
+      const half = 34; // 34 left + active + 34 right = 69
+      const start = Math.max(0, activeIndex - half);
+      const end = Math.min(binsAroundActiveBin.bins.length, activeIndex + half + 1);
+
+      const initialBins = binsAroundActiveBin.bins.slice(start, end);
 
       return { binRange: binsAroundActiveBin, initialBins };
     },

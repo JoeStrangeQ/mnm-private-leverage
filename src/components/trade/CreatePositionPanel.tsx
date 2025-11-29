@@ -6,10 +6,13 @@ import { Address, mints } from "../../../convex/utils/solana";
 import { MnMSuspense } from "../MnMSuspense";
 import { Skeleton } from "../ui/Skeleton";
 import { BinDistribution } from "../BinDistribution";
+import { AssetSplit, AssetSplitSlider } from "../AssetSplitSlider";
 
 export type CreatePositionState = {
   collateralMint: Address;
   collateralUiAmount: number;
+
+  tokenXSplit: number;
 };
 
 export type CreatePositionStore = CreatePositionState & {
@@ -20,6 +23,7 @@ export type CreatePositionStore = CreatePositionState & {
 const defaultCreatePositionState: CreatePositionState = {
   collateralMint: mints.usdc,
   collateralUiAmount: 0,
+  tokenXSplit: 0.5,
 };
 
 export const useCreatePositionState = create<CreatePositionStore>((set) => ({
@@ -32,7 +36,7 @@ export const useCreatePositionState = create<CreatePositionStore>((set) => ({
 
 export function CreatePositionPanel({ poolAddress }: { poolAddress: Address }) {
   const { convexUser } = useConvexUser();
-  const { collateralMint, collateralUiAmount, setCreatePositionState } = useCreatePositionState();
+  const { collateralMint, collateralUiAmount, tokenXSplit, setCreatePositionState } = useCreatePositionState();
   return (
     <div className="flex flex-col w-full">
       <Row fullWidth className="mb-3">
@@ -60,6 +64,15 @@ export function CreatePositionPanel({ poolAddress }: { poolAddress: Address }) {
       {/*Bin dis */}
       <div className="text-text text-sm text-left mb-3 mt-5">Set Bin Distribution</div>
       <BinDistribution poolAddress={poolAddress} onLiquidityShapeChange={() => {}} />
+
+      <div className="text-text text-sm text-left mb-3 mt-5">Set Asset Split</div>
+      <AssetSplit
+        poolAddress={poolAddress}
+        collateralAmount={collateralUiAmount}
+        collateralMint={collateralMint}
+        tokenXSplit={tokenXSplit}
+        onSplitChange={(newSplitX) => setCreatePositionState({ tokenXSplit: newSplitX })}
+      />
     </div>
   );
 }

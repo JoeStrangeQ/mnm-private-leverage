@@ -40,7 +40,7 @@ export function PairSelector({ currentPoolAddress, protocol }: { currentPoolAddr
     setLastByPairKey({ pairKey: pool.name.toLowerCase(), poolAddress: pool.address, protocol });
   }, [pool.address, protocol]);
   return (
-    <div className="flex flex-row items-center bg-backgroundTertiary rounded-full p-1">
+    <div className="flex flex-row items-center bg-backgroundSecondary rounded-full p-1">
       {pairs.map(({ tokenX, tokenY, defaultDlmmPool }) => {
         const key = getPairKey(tokenX, tokenY);
         const isSelected = key.toLowerCase() === pool.name.toLowerCase();
@@ -53,8 +53,8 @@ export function PairSelector({ currentPoolAddress, protocol }: { currentPoolAddr
               navigate({ to: `/${last?.protocol ?? "dlmm"}/${last?.poolAddress ?? defaultDlmmPool}` });
             }}
             className={cn(
-              "flex items-center gap-1 px-3 py-1 rounded-full cursor-pointer transition",
-              isSelected ? "bg-white/10 text-text" : "text-textSecondary hover:brightness-110"
+              "flex items-center gap-1 px-3 py-1 rounded-full cursor-pointer transition text-sm",
+              isSelected ? "bg-white/5 text-text" : "text-textSecondary hover:brightness-110"
             )}
           >
             <PoolTokenIcons xIcon={tokenX.icon} yIcon={tokenY.icon} size={18} />
@@ -68,11 +68,11 @@ export function PairSelector({ currentPoolAddress, protocol }: { currentPoolAddr
 
 export function PairSelectorSkeleton() {
   return (
-    <div className="flex flex-row items-center bg-backgroundTertiary rounded-full p-2">
+    <div className="flex flex-row items-center bg-backgroundSecondary rounded-full p-2">
       {pairs.map((p) => {
         return (
           <div
-          key={`${p.tokenX}-${p.tokenY}`}
+            key={`${p.tokenX}-${p.tokenY}`}
             className={cn(
               "flex items-center gap-1 px-3 py-1 rounded-full cursor-pointer transition",
               "text-textSecondary hover:brightness-110"

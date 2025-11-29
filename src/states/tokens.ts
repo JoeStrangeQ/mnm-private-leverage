@@ -48,3 +48,28 @@ export function useUsdToSolEquivalent(usdAmount: number): number {
   const solPrice = useTokenPrice({ mint: TOKENS_METADATA.SOL.address });
   return usdAmount / solPrice;
 }
+
+export function useCollateralToTokenAmount({
+  mint,
+  collateralMint,
+  collateralAmount,
+  split,
+}: {
+  mint: Address;
+  collateralMint: Address;
+  collateralAmount: number;
+  split: number;
+}) {
+  const tokenPrice = useTokenPrice({ mint });
+  const depositTokenPrice = useTokenPrice({ mint: collateralMint });
+
+  const collateralAmountUsd = collateralAmount * depositTokenPrice;
+  const tokenUsdAmount = collateralAmountUsd * split;
+  const tokenAmount = tokenUsdAmount / tokenPrice;
+
+  return {
+    collateralAmountUsd,
+    tokenUsdAmount,
+    tokenAmount,
+  };
+}
