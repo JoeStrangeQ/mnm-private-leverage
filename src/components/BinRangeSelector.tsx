@@ -213,7 +213,7 @@ export default function BinRangeSelector({
   };
 
   const selectedWidth = (upperIndex - lowerIndex + 1) * unitWidth;
-  const PRICE_LABELS_COUNT = 6;
+  const PRICE_LABELS_COUNT = 8;
   const labelsCount = Math.max(2, PRICE_LABELS_COUNT);
 
   // compute target indices evenly spaced across the bins
@@ -300,22 +300,36 @@ export default function BinRangeSelector({
 
         {/* PRICE LABELS */}
       </div>
-      <div className="relative w-full h-5 mt-1">
-        {labelIndices.map((idx) => {
+      <div className="relative w-full h-5 ">
+        {labelIndices.map((idx, i) => {
           const bin = bins[idx];
           if (!bin) return null;
 
-          const left = idx * unitWidth;
+          // barWidth must match bars above!
+          const barWidth = Math.max(2, unitWidth * 0.7);
+
+          // align label to bar center
+          const barCenter = idx * unitWidth + barWidth / 2;
+
+          // clamp translate
+          let translate = "-50%";
+          if (i === 0) translate = "0";
+          else if (i === labelIndices.length - 1) translate = "-100%";
 
           return (
             <div
               key={`price-${bin.binId}`}
-              className="absolute translate-x-[-50%] text-[10px] text-textSecondary whitespace-nowrap"
+              className="flex absolute h-min mt-1.5"
               style={{
-                left,
+                left: barCenter,
+                transform: `translateX(${translate})`,
               }}
             >
-              <FormattedBinPrice value={Number(bin.pricePerToken)} significantDigits={6} />
+              <FormattedBinPrice
+                classname=" text-[10px] text-textSecondary whitespace-nowrap"
+                value={Number(bin.pricePerToken)}
+                significantDigits={6}
+              />
             </div>
           );
         })}

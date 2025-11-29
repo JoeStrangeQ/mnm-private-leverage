@@ -57,11 +57,16 @@ export function RangeSelectorPanel({ poolAddress }: { poolAddress: Address }) {
 
   useEffect(() => {
     if (!lowerBin || !upperBin) {
-      const first = visibleBins[BUFFER];
+      const first = visibleBins[0 + BUFFER];
       const last = visibleBins[visibleBins.length - 1 - BUFFER];
+
       if (first && last) {
         const { lower: clampedLower, upper: clampedUpper } = clampSelectedRange(first, last, visibleBins);
-        updateUpperLowerBins({ newLower: clampedLower, newUpper: clampedUpper });
+
+        updateUpperLowerBins({
+          newLower: clampedLower,
+          newUpper: clampedUpper,
+        });
       }
     }
   }, [visibleBins]);

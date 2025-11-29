@@ -6,13 +6,15 @@ import { SlidingSelect } from "./ui/SlidingSelector";
 import { Row } from "./ui/Row";
 import { Address } from "../../convex/utils/solana";
 import { usePool } from "~/states/pools";
-import { useToken } from "~/states/tokens";
+import { useCollateralToTokenAmount, useToken } from "~/states/tokens";
 import { SerializedBinLiquidity } from "../../convex/services/meteora";
 import { useBinsAroundActiveBin } from "~/states/dlmm";
 import { motion } from "motion/react";
 import { FormattedBinPrice } from "./FormattedBinPrice";
 import { cn } from "~/utils/cn";
 import * as Slider from "@radix-ui/react-slider";
+import { useCreatePositionRangeStore } from "./trade/RangeSelectorPanel";
+import { useCreatePositionState } from "./trade/CreatePositionPanel";
 
 type LiquidityShape = "Spot" | "Curve" | "Bid-Ask";
 
@@ -23,11 +25,40 @@ export function BinDistribution({
   poolAddress: Address;
   onLiquidityShapeChange: (shape: LiquidityShape) => void;
 }) {
+  const { tokenXSplit, collateralMint, collateralUiAmount } = useCreatePositionState();
+  const { lowerBin, upperBin, updateUpperLowerBins } = useCreatePositionRangeStore();
+  const [liquidityShape, setLiqudityShape] = useState<LiquidityShape>("Spot");
   const pool = usePool({ poolAddress, protocol: "dlmm" });
   const tokenX = useToken({ mint: pool.mint_x });
   const tokenY = useToken({ mint: pool.mint_y });
+  const {
+    binRange: { activeBin: activeBinId },
+  } = useBinsAroundActiveBin({
+    poolAddress,
+    numberOfBinsToTheLeft: 67,
+    numberOfBinsToTheRight: 67,
+  });
 
-  const [liquidityShape, setLiqudityShape] = useState<LiquidityShape>("Spot");
+  const { tokenUsdAmount: xUsdAmount } = useCollateralToTokenAmount({
+    mint: pool.mint_x,
+    split: tokenXSplit,
+    collateralAmount: collateralUiAmount,
+    collateralMint: collateralMint,
+  });
+
+  const { tokenUsdAmount: yUsdAmount } = useCollateralToTokenAmount({
+    mint: pool.mint_y,
+    split: 1 - tokenXSplit,
+    collateralAmount: collateralUiAmount,
+    collateralMint: collateralMint,
+  });
+
+  const upperBinId = upperBin?.binId ?? 0;
+  const lowerBinId = lowerBin?.binId ?? 0;
+
+  const totalBins = upperBinId - lowerBinId;
+  const yBinCount = Math.max(0, activeBinId - (lowerBin?.binId ?? 0) + 1);
+  const xBinCount = totalBins - yBinCount;
   const liquidityShapes: { id: LiquidityShape; element: ReactNode }[] = [
     {
       id: "Spot",
@@ -73,68 +104,73 @@ export function BinDistribution({
 
         <div className="flex flex-row items-center gap-2.5">
           <div className="flex flex-row gap-1 items-center">
-            <div className="w-1 h-1 bg-purple rounded-full" />
+            <div className="w-1 h-1 bg-primary rounded-full" />
             <div className="text-text text-xs">{tokenX.symbol}</div>
-            <div className="text-textSecondary text-xs">35 / 69</div>
+            <div className="text-textSecondary text-xs">
+              {xBinCount} / {totalBins}
+            </div>
           </div>
 
           <div className="flex flex-row gap-1 items-center">
-            <div className="w-1 h-1 bg-primary rounded-full " />
+            <div className="w-1 h-1 bg-purple rounded-full " />
             <div className="text-text text-xs">{tokenY.symbol}</div>
-            <div className="text-textSecondary text-xs">34 / 69</div>
+            <div className="text-textSecondary text-xs">
+              {yBinCount} / {totalBins}
+            </div>
           </div>
         </div>
       </Row>
-      {/* <BinDistributionAdjuster
-        shape={liquidityShape}
-        poolAddress={poolAddress}
-        tokenXAmount={100_000}
-        tokenYAmount={100_000}
-        maxBarHeight={100}
-        // onRangeChange={(lower: number, upper: number) => {
-        //   console.log("Lower", lower);
-        //   console.log("upper", upper);
-        // }}
-      /> */}
+
+      {!lowerBin || !upperBin ? (
+        <BinDistributionAdjusterSkeleton label="Loading Bins" maxBarHeight={80} shape={liquidityShape} />
+      ) : (
+        <BinDistributionAdjuster
+          shape={liquidityShape}
+          poolAddress={poolAddress}
+          tokenXAmount={xUsdAmount}
+          tokenYAmount={yUsdAmount}
+          maxBarHeight={80}
+          lowerBin={lowerBin}
+          upperBin={upperBin}
+          onRangeChange={({ lower, upper }) => {
+            updateUpperLowerBins({ newLower: lower, newUpper: upper });
+          }}
+        />
+      )}
     </div>
   );
 }
 
-type Props = {
+type BinDistributionAdjusterProps = {
   poolAddress: Address;
   shape: LiquidityShape;
-  //   lowerBin: SerializedBinLiquidity;
-  //   upperBin: SerializedBinLiquidity;
+  lowerBin: SerializedBinLiquidity;
+  upperBin: SerializedBinLiquidity;
   tokenXAmount: number;
   tokenYAmount: number;
   maxBarHeight: number;
+  onRangeChange: (p: { lower: SerializedBinLiquidity; upper: SerializedBinLiquidity }) => void;
 };
 
 export function BinDistributionAdjuster({
   poolAddress,
   shape,
-  //   lowerBin,
-  //   upperBin,
+  lowerBin,
+  upperBin,
   tokenXAmount,
   tokenYAmount,
   maxBarHeight,
-}: Props) {
+  onRangeChange,
+}: BinDistributionAdjusterProps) {
   const {
     binRange: { bins, activeBin: activeBinId },
-    initialBins,
   } = useBinsAroundActiveBin({
     poolAddress,
     numberOfBinsToTheLeft: 67,
     numberOfBinsToTheRight: 67,
   });
-  const [range, setRange] = useState<{ lowerBin: SerializedBinLiquidity; upperBin: SerializedBinLiquidity }>({
-    lowerBin: initialBins[0],
-    upperBin: initialBins[initialBins.length - 1],
-  });
-  const totalBins = useMemo(
-    () => range.upperBin.binId - range.lowerBin.binId + 1,
-    [range.lowerBin.binId, range.upperBin.binId]
-  );
+  const [isDragging, setIsDragging] = useState(false);
+  const totalBins = useMemo(() => upperBin.binId - lowerBin.binId + 1, [lowerBin.binId, upperBin.binId]);
 
   const [binsYCount, setBinsYCount] = useState(Math.round(totalBins / 2));
   const binsXCount = totalBins - binsYCount;
@@ -162,7 +198,7 @@ export function BinDistributionAdjuster({
     const maxAmountSpot = Math.max(spotAmountPerBinX, spotAmountPerBinY);
     const maxAmountCurve = Math.max(...curveHeightsX, ...curveHeightsY);
 
-    const currentBinRange = bins.filter((b) => b.binId >= range.lowerBin.binId && b.binId <= range.upperBin.binId);
+    const currentBinRange = bins.filter((b) => b.binId >= lowerBin.binId && b.binId <= upperBin.binId);
 
     return {
       spotAmountPerBinY,
@@ -175,15 +211,15 @@ export function BinDistributionAdjuster({
       maxAmountCurve,
       currentBinRange,
     };
-  }, [binsXCount, binsYCount, tokenXAmount, tokenYAmount, bins, range.lowerBin.binId, range.upperBin.binId]);
+  }, [binsXCount, binsYCount, tokenXAmount, tokenYAmount, bins, lowerBin.binId, upperBin.binId]);
 
   // -----------------------------------------------------
   // 2️⃣ Auto-reset on activeBin change
   // -----------------------------------------------------
   useEffect(() => {
-    const newCount = activeBinId - range.lowerBin.binId;
+    const newCount = activeBinId - lowerBin.binId;
     setBinsYCount(newCount);
-  }, [activeBinId, range.lowerBin.binId]);
+  }, [activeBinId, lowerBin.binId]);
 
   // -----------------------------------------------------
   // 3️⃣ Memoized slider callback
@@ -199,10 +235,7 @@ export function BinDistributionAdjuster({
       const newUpper = bins.find((b) => b.binId === newUpperId);
 
       if (newLower && newUpper) {
-        setRange({
-          lowerBin: newLower,
-          upperBin: newUpper,
-        });
+        onRangeChange({ lower: newLower, upper: newUpper });
       }
     },
     [activeBinId, totalBins, bins]
@@ -235,66 +268,95 @@ export function BinDistributionAdjuster({
   // UI
   // -----------------------------------------------------
 
+  const binsGap = totalBins < 10 ? "gap-2" : totalBins < 25 ? "gap-1.5" : totalBins < 40 ? "gap-1" : "gap-0.5";
   return (
-    <div className="flex flex-col w-full">
-      <div className="flex flex-row items-end justify-between h-28 w-full gap-0.5">
-        {currentBinRange.map((bin, index) => {
-          const isTokenY = bin.binId < activeBinId;
-          const isActive = bin.binId === activeBinId;
+    <div className={"flex flex-col w-full"}>
+      <div
+        className={cn("flex flex-row items-end justify-between w-full", binsGap)}
+        style={{ height: maxBarHeight + 30 }}
+      >
+        {tokenXAmount === 0 && tokenYAmount === 0 ? (
+          <BinDistributionAdjusterSkeleton
+            label="No collateral detected"
+            maxBarHeight={80}
+            shape={shape}
+            renderPriceLabels={false}
+          />
+        ) : (
+          currentBinRange.map((bin, index) => {
+            const isTokenY = bin.binId < activeBinId;
+            const isActive = bin.binId === activeBinId;
 
-          const binLocalIndex = isTokenY ? index : index - binsYCount;
+            const binLocalIndex = isTokenY ? index : index - binsYCount;
 
-          const amount =
-            shape === "Spot"
-              ? isTokenY
-                ? spotAmountPerBinY
-                : spotAmountPerBinX
-              : shape === "Curve"
+            const amount =
+              shape === "Spot"
                 ? isTokenY
-                  ? curveHeightsY[index]
-                  : (curveHeightsX[binLocalIndex] ?? 0)
-                : isTokenY
-                  ? bidAskHeightsY[index]
-                  : (bidAskHeightsX[binLocalIndex] ?? 0);
+                  ? spotAmountPerBinY
+                  : spotAmountPerBinX
+                : shape === "Curve"
+                  ? isTokenY
+                    ? curveHeightsY[index]
+                    : (curveHeightsX[binLocalIndex] ?? 0)
+                  : isTokenY
+                    ? bidAskHeightsY[index]
+                    : (bidAskHeightsX[binLocalIndex] ?? 0);
 
-          const max = shape === "Spot" ? maxAmountSpot : maxAmountCurve;
+            const max = shape === "Spot" ? maxAmountSpot : maxAmountCurve;
 
-          const height = (amount / max) * maxBarHeight;
+            const minHeight = (isTokenY && tokenYAmount === 0) || (!isTokenY && tokenXAmount === 0) ? 0 : 2;
+            const height = Math.max(minHeight, (amount / max) * maxBarHeight);
 
-          return (
-            <motion.div
-              key={bin.binId}
-              className={cn("flex-1 relative rounded-full", isTokenY ? "bg-purple" : "bg-primary")}
-              initial={{ height: 0 }}
-              animate={{ height }}
-              transition={{ duration: 0.12 }}
-            >
-              {isActive && (
-                <div className="absolute -top-6 left-1/2 -translate-x-1/2 z-1 px-2 py-0.5 rounded-full bg-white/20 backdrop-blur-2xl">
-                  <FormattedBinPrice
-                    classname="text-text text-[10px]"
-                    value={parseFloat(bin.pricePerToken)}
-                    significantDigits={5}
-                  />
-                </div>
-              )}
-            </motion.div>
-          );
-        })}
+            return (
+              <motion.div
+                key={bin.binId}
+                className={cn(
+                  "flex-1 relative rounded-xl  ",
+                  "rounded-b-none",
+                  isActive ? "bg-white/75" : isTokenY ? "bg-purple/75" : "bg-primary/75"
+                )}
+                initial={{ height: 0 }}
+                animate={{ height }}
+                transition={{ duration: 0.12 }}
+              >
+                {isActive && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.8, y: 4 }}
+                    animate={isDragging ? { opacity: 1, scale: 1, y: 0 } : { opacity: 0, scale: 0.8, y: 4 }}
+                    transition={{
+                      duration: 0.18,
+                      ease: "easeOut",
+                    }}
+                    className="flex select-none absolute bottom-2 left-1/2 -translate-x-1/2 z-10 px-2 py-1 rounded-full bg-backgroundQuaternary backdrop-blur-2xl shadow-lg border border-white/10"
+                  >
+                    <FormattedBinPrice
+                      classname="text-text text-[10px]"
+                      value={parseFloat(bin.pricePerToken)}
+                      significantDigits={5}
+                    />
+                  </motion.div>
+                )}
+              </motion.div>
+            );
+          })
+        )}
       </div>
 
       {/* Slider */}
       <Slider.Root
-        className="relative flex items-center w-full"
+        className="relative flex items-center w-full "
         value={[binsYCount]}
         max={totalBins - 2}
         min={0}
         step={1}
         onValueChange={handleSlider}
+        onPointerDown={() => setIsDragging(true)}
+        onPointerUp={() => setIsDragging(false)}
+        onPointerCancel={() => setIsDragging(false)}
       >
-        {tokenXAmount !== 0 && tokenYAmount !== 0 && (
+        {!(tokenXAmount === 0 && tokenYAmount === 0) && (
           <Slider.Thumb asChild>
-            <div className="relative z-5 w-7 h-2.5 rounded-full bg-text/75 backdrop-blur-lg flex items-center justify-center cursor-grab hover:scale-110 transition">
+            <div className="relative z-5 w-7 h-2.5 rounded-full outline-0  bg-text/75 backdrop-blur-lg flex items-center justify-center cursor-grab active:scale-95 transition-transform">
               {[0, 1, 2].map((i) => (
                 <div key={i} className="w-px h-1.5 bg-black rounded-full mx-px" />
               ))}
@@ -303,7 +365,7 @@ export function BinDistributionAdjuster({
         )}
       </Slider.Root>
 
-      <div className="mt-2 flex flex-row justify-between w-full text-textSecondary text-xs font-mono">
+      <div className="mt-2 flex flex-row justify-between w-full select-none text-textSecondary text-xs">
         {priceLabels}
       </div>
     </div>
@@ -316,4 +378,106 @@ export function getLinearCurveHeights(binCount: number, tokenAmount: number, rev
   const step = (2 * tokenAmount) / (binCount * (binCount + 1));
   const arr = Array.from({ length: binCount }, (_, i) => step * (i + 1));
   return reverse ? arr.reverse() : arr;
+}
+
+export function BinDistributionAdjusterSkeleton({
+  label = "Loading",
+  maxBarHeight,
+  shape,
+  binCount = 25,
+  renderPriceLabels = true,
+}: {
+  label?: string;
+  maxBarHeight: number;
+  shape: LiquidityShape;
+  binCount?: number;
+  renderPriceLabels?: boolean;
+}) {
+  const heights = getSkeletonHeights({ shape, binCount, maxBarHeight });
+
+  return (
+    <div className="flex flex-col w-full ">
+      {/* Bars container */}
+      <div className="relative w-full px-3" style={{ height: maxBarHeight + 10 }}>
+        {/* Bars */}
+        <div className="absolute inset-0 flex flex-row items-end justify-between gap-1.5">
+          {heights.map((h, i) => (
+            <motion.div
+              key={i}
+              className="flex flex-1 w-min rounded-xl rounded-b-none bg-text/10"
+              initial={false}
+              animate={{ height: h }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+            />
+          ))}
+        </div>
+
+        {/* Overlay */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            className="w-full h-full backdrop-blur-xs rounded-xl flex items-center justify-center"
+          >
+            <div className="flex bg-white/10 backdrop-blur-lg px-2 py-1.5 rounded-xl">
+              <div className="text-textSecondary text-sm">{label}</div>
+            </div>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* Price labels placeholder */}
+      {renderPriceLabels && (
+        <div className="mt-2 flex flex-row justify-between w-full select-none">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-3 bg-text/10 rounded-sm"
+              style={{ width: `${100 / 10}%` }} // auto-scales, nicer on all screens
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getSkeletonHeights({
+  shape,
+  binCount,
+  maxBarHeight,
+}: {
+  shape: LiquidityShape;
+  binCount: number;
+  maxBarHeight: number;
+}) {
+  if (shape === "Spot") {
+    // Flat proportional placeholders
+    return Array.from({ length: binCount }, () => maxBarHeight);
+  }
+
+  if (shape === "Curve") {
+    // Smooth symmetric curve
+    const mid = Math.floor(binCount / 2);
+    return Array.from({ length: binCount }, (_, i) => {
+      const dist = Math.abs(i - mid);
+      const factor = 1 - dist / mid; // center tallest
+      return Math.max(0.1, factor) * maxBarHeight;
+    });
+  }
+
+  if (shape === "Bid-Ask") {
+    // Two peaks on the sides
+    const mid = Math.floor(binCount / 2);
+    return Array.from({ length: binCount }, (_, i) => {
+      const distLeft = i;
+      const distRight = binCount - 1 - i;
+      const factor = Math.max(1 - distLeft / mid, 1 - distRight / mid); // peaks on both sides
+      return Math.max(0.1, factor) * maxBarHeight;
+    });
+  }
+
+  return Array.from({ length: binCount }, () => maxBarHeight * 0.5);
 }
