@@ -109,7 +109,7 @@ export function BinDistribution({
     <div className="flex flex-col">
       <Row>
         <SlidingSelect
-          className="gap-0"
+          className="gap-0 bg-backgroundTertiary"
           options={liquidityShapes}
           value={liquidityShape}
           containerPaddingInPixels={{ px: 8, py: 8 }}
