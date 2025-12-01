@@ -9,7 +9,7 @@
 //   TransactionMessage,
 //   VersionedTransaction,
 // } from "@solana/web3.js";
-// import { vBinIdAndPrice, vLiquidityStrategy } from "../../schema/positions";
+// import { vBinIdAndPrice, vLiquidityShape } from "../../schema/positions";
 // import { authenticateUser } from "../../privy";
 // import { buildTitanSwapTransaction } from "../../helpers/buildTitanSwapTransaction";
 // import { action } from "../../_generated/server";
@@ -46,7 +46,7 @@
 //     collateral: vCollateralToken,
 //     tokenX: vPairToken,
 //     tokenY: vPairToken,
-//     strategyTypeString: vLiquidityStrategy,
+//     strategyTypeString: vLiquidityShape,
 //   },
 //   handler: async (ctx, args): Promise<ActionRes> => {
 //     try {

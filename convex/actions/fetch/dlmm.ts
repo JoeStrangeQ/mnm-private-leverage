@@ -2,9 +2,11 @@
 import { v } from "convex/values";
 import { components, internal } from "../../_generated/api";
 import { ActionCache } from "@convex-dev/action-cache";
-import { getActiveBin, getBinsAroundActiveBin, SerializedBinLiquidity } from "../../services/meteora";
+import { getActiveBin, getBinsAroundActiveBin, getDlmmPoolConn, SerializedBinLiquidity } from "../../services/meteora";
 import { action, internalAction } from "../../_generated/server";
 import { MS_1S } from "../../utils/timeframe";
+import { PublicKey } from "@solana/web3.js";
+import { serializePositionData } from "../../utils/meteora";
 
 const binsAroundActiveBinCache = new ActionCache(components.actionCache, {
   action: internal.actions.fetch.dlmm.getBinsAroundActiveBinInternalAction,
@@ -52,4 +54,14 @@ export const getActiveBinAction = action({
 export const getActiveBinInternalAction = internalAction({
   args: { poolAddress: v.string() },
   handler: async (_, args) => await getActiveBin(args),
+});
+
+export const getOpenPosition = action({
+  args: { poolAddress: v.string(), positionPubkey: v.string() },
+  handler: async (_, args) => {
+    const dlmmPoolConn = await getDlmmPoolConn(args.poolAddress);
+    const { positionData: onChainPosition } = await dlmmPoolConn.getPosition(new PublicKey(args.positionPubkey));
+
+    return serializePositionData(onChainPosition);
+  },
 });

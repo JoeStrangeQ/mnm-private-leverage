@@ -68,7 +68,7 @@ export function RangeSelectorPanel({ poolAddress }: { poolAddress: Address }) {
     });
 
     initRef.current = true;
-  }, [binRange, sideBins, lowerBin, upperBin, updateUpperLowerBins]);
+  }, [binRange, sideBins, lowerBin, upperBin, poolAddress]);
 
   if (!binRange?.bins?.length || !lowerBin || !upperBin) {
     return <RangeSelectorPanelSkeleton />;

@@ -133,7 +133,7 @@ export const JupiterSwapInstructionsResponseZ = z.object({
 
   addressLookupTableAddresses: z.array(z.string()),
 
-  cleanupInstruction: InstructionZ.optional(),
+  cleanupInstruction: InstructionZ.nullable().optional(),
 });
 
 export type TokenMetadata = z.infer<typeof TokenMetadataZ>;

@@ -16,6 +16,11 @@ import * as Slider from "@radix-ui/react-slider";
 import { Skeleton } from "./ui/Skeleton";
 
 export type LiquidityShape = "Spot" | "Curve" | "Bid-Ask";
+export const LiquidityShapeIconMap: Record<LiquidityShape, any> = {
+  Curve: CurveIcon,
+  Spot: SpotIcon,
+  "Bid-Ask": BidAskIcon,
+} as const;
 
 export function BinDistribution({
   poolAddress,

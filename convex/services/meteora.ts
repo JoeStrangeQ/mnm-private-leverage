@@ -1,4 +1,4 @@
-import DLMM from "@meteora-ag/dlmm";
+import DLMM, { PositionBinData } from "@meteora-ag/dlmm";
 import { connection } from "../convexEnv";
 import { PublicKey } from "@solana/web3.js";
 import { serializeBinLiquidity } from "../utils/meteora";
@@ -15,6 +15,29 @@ export interface SerializedBinLiquidity {
   feeAmountXPerTokenStored: string;
   feeAmountYPerTokenStored: string;
   rewardPerTokenStored: string[];
+}
+
+export interface SerializedPositionData {
+  totalXAmount: string;
+  totalYAmount: string;
+  positionBinData: PositionBinData[]; // already strings → no change
+  lastUpdatedAt: string;
+  upperBinId: number;
+  lowerBinId: number;
+  feeX: string;
+  feeY: string;
+  rewardOne: string;
+  rewardTwo: string;
+  feeOwner: string;
+  totalClaimedFeeXAmount: string;
+  totalClaimedFeeYAmount: string;
+  feeXExcludeTransferFee: string;
+  feeYExcludeTransferFee: string;
+  rewardOneExcludeTransferFee: string;
+  rewardTwoExcludeTransferFee: string;
+  totalXAmountExcludeTransferFee: string;
+  totalYAmountExcludeTransferFee: string;
+  owner: string;
 }
 
 const poolCache: Record<string, DLMM> = {};

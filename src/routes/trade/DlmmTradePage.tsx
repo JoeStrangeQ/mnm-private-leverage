@@ -6,6 +6,7 @@ import { RangeSelectorPanel, RangeSelectorPanelSkeleton } from "~/components/tra
 import { MnMSuspense } from "~/components/MnMSuspense";
 import { ChartColumnIncreasing } from "lucide-react";
 import { usePool } from "~/states/pools";
+import { OpenPositionsTable } from "~/components/trade/OpenPositionsTable";
 
 export default function DlmmTradePage() {
   const { poolAddress } = useParams({ strict: false }) as {
@@ -46,12 +47,15 @@ export default function DlmmTradePage() {
           </div>
         </div>
 
-        <div className="rounded-2xl bg-backgroundSecondary px-4 py-6 order-1 xl:order-2">
+        <div className="rounded-2xl bg-backgroundSecondary px-4 pt-6 pb-4 order-1 xl:order-2">
           <MnMSuspense fallback={<CreatePositionPanelSkeleton />}>
             <CreatePositionPanel poolAddress={parsedPoolAddress} />
           </MnMSuspense>
         </div>
       </div>
+
+      <div className="text-text text-sm text-left mt-5 mb-2">Open Positions</div>
+      <OpenPositionsTable />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { Infer, v } from "convex/values";
 
 export const vPositionType = v.union(v.literal("DLMM"), v.literal("CLMM"));
 
@@ -11,12 +11,12 @@ export const vBinIdAndPrice = v.object({
   id: v.number(),
   price: v.number(),
 });
-export const vLiquidityStrategy = v.union(v.literal("Spot"), v.literal("Curve"), v.literal("BidAsk"));
+export const vLiquidityShape = v.union(v.literal("Spot"), v.literal("Curve"), v.literal("BidAsk"));
 
 const vDLMMDetails = v.object({
   lowerBin: vBinIdAndPrice,
   upperBin: vBinIdAndPrice,
-  liquidityStrategy: vLiquidityStrategy,
+  liquidityStrategy: vLiquidityShape,
   autoCompoundSplit: v.number(),
 });
 
@@ -38,3 +38,6 @@ export const vPosition = v.object({
   closedAt: v.optional(v.number()),
   isActive: v.boolean(),
 });
+
+export type PositionTokenAmount = Infer<typeof vTokenAmount>;
+export type BinIdAndPrice = Infer<typeof vBinIdAndPrice>;

@@ -15,6 +15,7 @@ type SlidingSelectProps<T extends string> = {
   className?: string; // wrapper style (bg, padding etc)
   highlightClassName?: string;
   containerPaddingInPixels?: { px: number; py: number };
+  disableScale?: true;
 };
 
 export function SlidingSelect<T extends string>({
@@ -24,6 +25,7 @@ export function SlidingSelect<T extends string>({
   className = "",
   containerPaddingInPixels = { px: 12, py: 6 },
   highlightClassName = "inner-white bg-white/5 backdrop-blur-md",
+  disableScale,
 }: SlidingSelectProps<T>) {
   const containerRef = useRef<HTMLDivElement>(null);
   const refs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -60,7 +62,7 @@ export function SlidingSelect<T extends string>({
         <motion.div
           className={`w-full h-full rounded-full ${highlightClassName}`}
           key={value}
-          initial={{ scaleY: 1.3 }}
+          initial={{ scaleY: disableScale ? 1 : 1.3 }}
           animate={{ scaleY: 1 }}
           transition={{
             type: "spring",

@@ -10,7 +10,6 @@ export async function simulateTransaction(
   const tx = toVersioned(transaction);
   const serialized = tx.serialize();
   const encodedTx = Buffer.from(serialized).toString("base64");
-
   const body = {
     jsonrpc: "2.0",
     id: "sim",
