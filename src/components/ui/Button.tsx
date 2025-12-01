@@ -14,30 +14,39 @@ export interface ButtonProps {
 }
 
 const variants: Record<ButtonVariant, string> = {
-  primary: "bg-primary/85 hover:bg-primary text-white",
-  liquidPrimary: "bg-primary/10 hover:bg-primary/20 inner-primary text-primary",
-  liquidWhite: "bg-backgroundSecondary/40 hover:bg-white/5 inner-white text-text",
-  ghost: "bg-transparent hover:bg-white/5 text-text",
-  neutral: "bg-white/10 hover:bg-white/15 text-text",
+  primary: "bg-primary/85 text-white",
+  liquidPrimary: "bg-primary/10 inner-primary text-primary",
+  liquidWhite: "bg-backgroundSecondary/40 inner-white text-text",
+  ghost: "bg-transparent text-text",
+  neutral: "bg-white/10 text-text",
+};
+
+const variantsHover: Record<ButtonVariant, string> = {
+  primary: "hover:bg-primary",
+  liquidPrimary: "hover:bg-primary/15",
+  liquidWhite: "hover:bg-white/5",
+  ghost: "hover:bg-white/5",
+  neutral: "hover:bg-white/15",
 };
 
 export function Button({ children, onClick, variant = "primary", loading, disabled, className }: ButtonProps) {
   return (
-    <motion.div
+    <motion.button
       initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
+      animate={{ opacity: disabled ? 0.4 : 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.2 }}
-      onClick={!disabled ? onClick : undefined}
+      onClick={onClick}
       className={cn(
-        "flex items-center justify-center py-3 px-4 h-min rounded-full cursor-pointer select-none whitespace-nowrap font-semibold gap-2 hover-effect active:scale-95",
+        "flex items-center justify-center py-3 px-4 h-min rounded-full select-none whitespace-nowrap font-semibold gap-2",
         variants[variant],
-        disabled && "opacity-50 pointer-events-none",
+        disabled ? "opacity-20" : `cursor-pointer hover-effect active:scale-95 ${variantsHover[variant]}`,
         className
       )}
+      disabled={disabled}
     >
       {loading && <Spinner className="h-4 w-4" />}
       {children}
-    </motion.div>
+    </motion.button>
   );
 }

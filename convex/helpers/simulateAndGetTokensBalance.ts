@@ -44,7 +44,11 @@ export async function simulateAndGetTokensBalance({
 
     const mint = post.mint;
 
-    const pre = preTokenBalances[mint];
+    const pre = preTokenBalances[mint] ?? {
+      rawAmount: 0n,
+      decimals: 0,
+    };
+
     const postAmount = BigInt(post.uiTokenAmount.amount);
 
     const diff = postAmount - pre.rawAmount;

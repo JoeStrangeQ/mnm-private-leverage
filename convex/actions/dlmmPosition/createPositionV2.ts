@@ -2,12 +2,12 @@
 import { v } from "convex/values";
 import { action } from "../../_generated/server";
 import { getServerSwapQuote, vQuoteDetails } from "../../services/mnmServer";
-import { vBinIdAndPrice, vLiquidityStrategy } from "../../schema/positions";
+import { vBinIdAndPrice, vLiquidityShape } from "../../schema/positions";
 import { ActionRes } from "../../types/actionResults";
 import { authenticateUser, PrivyWallet } from "../../privy";
 import { amountToRawAmount, safeBigIntToNumber } from "../../utils/amounts";
 import BN from "bn.js";
-import { executeSwapsWithNozomi } from "../../helpers/executeSwapsWithNozomi";
+import { executeSwapsWithNozomi, SwapSpec } from "../../helpers/executeSwapsWithNozomi";
 import DLMM, { StrategyParameters, StrategyType } from "@meteora-ag/dlmm";
 import {
   ComputeBudgetProgram,
@@ -19,13 +19,14 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import { connection } from "../../convexEnv";
-import { getCuInstructions, toAddress } from "../../utils/solana";
+import { Address, getCuInstructions, toAddress } from "../../utils/solana";
 import { getRandomNozomiTipPubkey, sendNozomiTransaction } from "../../helpers/nozomi";
 import { getJupiterTokenPrices } from "../../services/jupiter";
 import { internal } from "../../_generated/api";
 import { simulateTransaction } from "../../services/solana";
 import { delay } from "../../utils/retry";
 import { parseTransactionsBalanceChanges } from "../../helpers/parseTransaction";
+import { SwapQuotes } from "../../helpers/normalizeServerSwapQuote";
 const vCollateralToken = v.object({
   mint: v.string(),
   decimals: v.number(),
@@ -43,33 +44,46 @@ export const createPosition = action({
     quoteDetails: v.array(vQuoteDetails),
     poolAddress: v.string(),
     autoCompoundSplit: v.number(),
-    minBin: vBinIdAndPrice,
-    maxBin: vBinIdAndPrice,
+    lowerBin: vBinIdAndPrice,
+    upperBin: vBinIdAndPrice,
     collateral: vCollateralToken,
     tokenX: vPairToken,
     tokenY: vPairToken,
-    strategyTypeString: vLiquidityStrategy,
+    liquidityShape: vLiquidityShape,
   },
-  handler: async (ctx, args): Promise<ActionRes> => {
+  handler: async (ctx, args): Promise<ActionRes<"create_position">> => {
     try {
       console.time("Auth");
       const { user, userWallet } = await authenticateUser({ ctx });
       if (!user) throw new Error("Unauthorized user");
-      const { tokenX, tokenY, collateral, poolAddress, minBin, maxBin, strategyTypeString } = args;
+      const { tokenX, tokenY, collateral, poolAddress, lowerBin, upperBin, liquidityShape } = args;
       console.timeEnd("Auth");
 
-      console.time("quote");
-      const swapQuotes = await Promise.all(
-        args.quoteDetails.map((q) => getServerSwapQuote({ userId: user._id, ...q }))
-      );
-      console.timeEnd("quote");
+      const collateralRawAmount = amountToRawAmount(collateral.amount, collateral.decimals);
+      const xInCollateralRaw = Math.floor(collateralRawAmount * tokenX.split);
+      const yInCollateralRaw = Math.floor(collateralRawAmount * tokenY.split);
+      console.log("Coll", collateralRawAmount);
+      console.log("x", xInCollateralRaw);
+      console.log("y", yInCollateralRaw);
+
+      const { swapQuotes, swapSpecs } = await getTitanSwapQuotesOrFallback({
+        quoteDetails: args.quoteDetails,
+        userId: user._id,
+        collateralMint: toAddress(collateral.mint),
+        xMint: toAddress(tokenX.mint),
+        yMint: toAddress(tokenY.mint),
+        xInCollateralRaw,
+        yInCollateralRaw,
+        slippageBps: 100,
+      });
 
       console.time("exc swaps");
-      const swapExecuteRes = await executeSwapsWithNozomi({ userWallet, titanSwapQuotes: swapQuotes, swapSpecs: [] });
+      const swapExecuteRes = await executeSwapsWithNozomi({ userWallet, titanSwapQuotes: swapQuotes, swapSpecs });
       console.timeEnd("exc swaps");
 
       if (!swapExecuteRes.ok) {
         //TODO: Handle partial swaps , maybe add to a db and write down that a user got funds that are partially swapped so if he will retry to create position we will use them and skip the swap, also we will show notification
+        console.error("Error executing swaps with nozomi on create position:", swapExecuteRes.errorMsg);
         return {
           status: "failed",
           errorMsg: swapExecuteRes.errorMsg,
@@ -86,6 +100,8 @@ export const createPosition = action({
       });
       if (!parseSwapTxsRes.ok) {
         //TODO: handle partial failure and get good error message, use swapExecuteRes to find the quote of the failed sig
+        console.error("Swaps on create position failed:", parseSwapTxsRes.failedSigs.length, " swaps failed");
+
         return {
           status: "failed",
           errorMsg: `${parseSwapTxsRes.failedSigs?.length} swaps failed`,
@@ -93,6 +109,7 @@ export const createPosition = action({
       }
 
       const { tokenBalancesChange } = parseSwapTxsRes;
+
       console.log("Blanac res", tokenBalancesChange);
       const xDelta = tokenBalancesChange[tokenX.mint]?.rawAmount ?? new BN(0);
       const yDelta = tokenBalancesChange[tokenY.mint]?.rawAmount ?? new BN(0);
@@ -105,17 +122,11 @@ export const createPosition = action({
 
       console.timeEnd("Parse");
 
-      const collateralRawAmount = amountToRawAmount(collateral.amount, collateral.decimals);
+      const xRawAmount = collateral.mint === tokenX.mint ? new BN(xInCollateralRaw) : xAmountInFromSwap;
 
-      const xRawAmount =
-        collateral.mint === tokenX.mint
-          ? new BN(Math.floor(collateralRawAmount * tokenX.split))
-          : new BN(xAmountInFromSwap);
+      const yRawAmount = collateral.mint === tokenY.mint ? new BN(yInCollateralRaw) : yAmountInFromSwap;
 
-      const yRawAmount =
-        collateral.mint === tokenY.mint
-          ? new BN(Math.floor(collateralRawAmount * tokenY.split))
-          : new BN(yAmountInFromSwap);
+      console.log(xRawAmount.toString(), yRawAmount.toString());
 
       console.time("exc create");
       const createRes = await buildAndSendCreatePositionWithRetry({
@@ -124,13 +135,15 @@ export const createPosition = action({
         xRawAmount: xRawAmount,
         yRawAmount: yRawAmount,
         strategy: {
-          minBinId: minBin.id,
-          maxBinId: maxBin.id,
-          strategyType: StrategyType[strategyTypeString],
+          minBinId: lowerBin.id,
+          maxBinId: upperBin.id,
+          strategyType: StrategyType[liquidityShape],
         },
       });
 
       if (!createRes?.ok) {
+        console.error("Couldn't build or send create position transaction:", createRes?.error);
+
         return {
           status: "failed",
           errorMsg: createRes?.error as string,
@@ -148,7 +161,7 @@ export const createPosition = action({
       const tokenDetails = {
         collateral: {
           mint: collateral.mint,
-          rawAmount: amountToRawAmount(collateral.amount, collateral.decimals),
+          rawAmount: collateralRawAmount,
           usdPrice: tokenPrices[toAddress(collateral.mint)]?.usdPrice ?? 0,
         },
         tokenX: {
@@ -178,7 +191,7 @@ export const createPosition = action({
             details: {
               poolAddress,
               positionType: "DLMM",
-              range: `${minBin.price}-${maxBin.price}`,
+              range: `${lowerBin.price}-${upperBin.price}`,
               ...tokenDetails,
             },
           },
@@ -192,9 +205,9 @@ export const createPosition = action({
             positionPubkey,
             details: {
               autoCompoundSplit: args.autoCompoundSplit,
-              lowerBin: minBin,
-              upperBin: maxBin,
-              liquidityStrategy: strategyTypeString,
+              lowerBin: lowerBin,
+              upperBin: upperBin,
+              liquidityStrategy: liquidityShape,
             },
             ...tokenDetails,
           },
@@ -207,6 +220,7 @@ export const createPosition = action({
         result: {
           activityId,
           positionPubkey,
+          createPositionTxId,
         },
       };
     } catch (error: any) {
@@ -253,13 +267,13 @@ async function buildAndSendCreatePositionWithRetry({
         if (attempt === maxRetry) {
           return {
             ok: false as const,
-            error: sim.err,
+            error: "Simulation Error",
             attempted: maxRetry,
           };
         }
         console.log(sim.logs);
         console.error("Simulation Failed", sim.err);
-        await delay(200 * attempt);
+        await delay(700 * attempt);
         continue;
       }
       console.log("Simulation succses");
@@ -280,11 +294,11 @@ async function buildAndSendCreatePositionWithRetry({
       if (attempt === maxRetry) {
         return {
           ok: false as const,
-          error: err,
+          error: "Error sending create position transaction with nozomi",
           attempted: maxRetry,
         };
       }
-      await delay(200 * attempt);
+      await delay(700 * attempt);
     }
   }
 }
@@ -352,4 +366,108 @@ async function buildCreatePositionTx({
     createPositionTx: versionedTx,
     positionPubkey: newPositionKeypair.publicKey.toBase58(),
   };
+}
+
+export async function getTitanSwapQuotesOrFallback({
+  quoteDetails,
+  userId,
+  collateralMint,
+  xMint,
+  yMint,
+  xInCollateralRaw,
+  yInCollateralRaw,
+  slippageBps,
+}: {
+  quoteDetails: any[];
+  userId: string;
+  collateralMint: Address;
+  xMint: Address;
+  yMint: Address;
+  xInCollateralRaw: number;
+  yInCollateralRaw: number;
+  slippageBps: number;
+}): Promise<{
+  swapQuotes: SwapQuotes[] | undefined;
+  swapSpecs: SwapSpec[];
+}> {
+  let swapQuotes: any[] | undefined = undefined;
+  let swapSpecs: SwapSpec[] = [];
+
+  try {
+    console.time("TitanQuote");
+
+    swapQuotes = await Promise.all(quoteDetails.map((q) => getServerSwapQuote({ userId, ...q })));
+
+    console.timeEnd("TitanQuote");
+
+    // Validate Titan responses
+
+    // 1. length mismatch
+    if (!swapQuotes || swapQuotes.length !== quoteDetails.length) {
+      throw new Error("Titan returned incomplete results");
+    }
+
+    // 2. empty or missing routes
+    const emptyRoutes = swapQuotes.some((q) => !q.quotes || Object.keys(q.quotes).length === 0);
+
+    if (emptyRoutes) {
+      throw new Error("Titan returned empty routes");
+    }
+  } catch (err) {
+    console.error("Titan quote failure - falling back to Jupiter:", err);
+
+    swapQuotes = undefined;
+
+    // Build fallback specs
+    swapSpecs = buildFallbackSwapSpecs({
+      collateralMint,
+      xMint,
+      yMint,
+      xInCollateralRaw,
+      yInCollateralRaw,
+      slippageBps,
+    });
+  }
+
+  return { swapQuotes, swapSpecs };
+}
+
+// ---- Fallback Spec Builder ----
+
+export function buildFallbackSwapSpecs({
+  collateralMint,
+  xMint,
+  yMint,
+  xInCollateralRaw,
+  yInCollateralRaw,
+  slippageBps,
+}: {
+  collateralMint: Address;
+  xMint: Address;
+  yMint: Address;
+  xInCollateralRaw: number;
+  yInCollateralRaw: number;
+  slippageBps: number;
+}): SwapSpec[] {
+  const specs: SwapSpec[] = [];
+
+  if (collateralMint !== xMint) {
+    specs.push({
+      inputMint: collateralMint,
+      outputMint: xMint,
+      amount: new BN(xInCollateralRaw),
+      slippageBps,
+    });
+  }
+
+  if (collateralMint !== yMint) {
+    specs.push({
+      inputMint: collateralMint,
+      outputMint: yMint,
+      amount: new BN(yInCollateralRaw),
+      slippageBps,
+    });
+  }
+
+  return specs;
 }

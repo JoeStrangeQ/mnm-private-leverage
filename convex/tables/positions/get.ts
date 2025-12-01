@@ -10,3 +10,15 @@ export const getPositionByPubkey = query({
       .unique();
   },
 });
+
+export const getUserOpenPositions = query({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, { userId }) => {
+    return await ctx.db
+      .query("positions")
+      .withIndex("by_active", (q) => q.eq("userId", userId).eq("isActive", true))
+      .collect();
+  },
+});

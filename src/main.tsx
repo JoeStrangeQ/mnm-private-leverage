@@ -21,6 +21,7 @@ import { useLastVisitedPool } from "./providers/useLastVisitedPool";
 import Lend from "./routes/Lend";
 import { DEFAULT_DLMM_POOL } from "./components/layout/PairSelector";
 import { zAddress } from "../convex/utils/solana";
+import { ActionTracker } from "./components/ActionTracker";
 
 const DEAFULT_POOL_ROUTE = `/dlmm/${DEFAULT_DLMM_POOL}`;
 const rootRoute = createRootRoute({
@@ -30,6 +31,7 @@ const rootRoute = createRootRoute({
       <main className="flex flex-1  justify-center ">
         <Outlet />
       </main>
+      <ActionTracker />
     </div>
   ),
 });

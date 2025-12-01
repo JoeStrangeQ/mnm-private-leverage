@@ -2,15 +2,20 @@ import { create } from "zustand";
 import { AMOUNTS_TO_OPEN_DLMM_POSITION, CollateralDepositInput, MaxBalance } from "../CollateralDepositInput";
 import { Row } from "../ui/Row";
 import { useConvexUser } from "~/providers/UserStates";
-import { Address, mints } from "../../../convex/utils/solana";
+import { Address, mints, tokensMetadata } from "../../../convex/utils/solana";
 import { MnMSuspense } from "../MnMSuspense";
 import { Skeleton } from "../ui/Skeleton";
 import { BinDistribution, BinDistributionSkeleton, LiquidityShape } from "../BinDistribution";
 import { AssetSplit, AssetSplitSkelton } from "../AssetSplitSlider";
 import { useCreatePositionRangeStore } from "./RangeSelectorPanel";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useBinsAroundActiveBin } from "~/states/dlmm";
 import { useRouterState } from "@tanstack/react-router";
+import { useTokenBalance } from "~/states/balances";
+import { Button } from "../ui/Button";
+import { ConfirmPositionContent, ConfirmPositionContentSkeleton } from "./ConfirmPositionModal";
+import { Doc } from "../../../convex/_generated/dataModel";
+import { Modal } from "../ui/Modal";
 
 export type CreatePositionState = {
   collateralMint: Address;
@@ -101,7 +106,7 @@ export function CreatePositionPanel({ poolAddress }: { poolAddress: Address }) {
   }, [pathname, poolAddress]);
 
   return (
-    <div className="flex flex-col w-full">
+    <div className="flex flex-col w-full h-full">
       <Row fullWidth className="mb-3">
         <div className="text-text text-sm">Collateral</div>
         {convexUser && (
@@ -152,13 +157,93 @@ export function CreatePositionPanel({ poolAddress }: { poolAddress: Address }) {
           onSplitChange={(newSplitX) => setCreatePositionState({ tokenXSplit: newSplitX })}
         />
       </MnMSuspense>
+
+      {convexUser ? (
+        <CreatePositionButton
+          poolAddress={poolAddress}
+          convexUser={convexUser}
+          collateralMint={collateralMint}
+          collateralUiAmount={collateralUiAmount}
+        />
+      ) : (
+        <Button variant="liquidPrimary" className="mb-0 mt-auto" disabled={true}>
+          Wallet Not Connected
+        </Button>
+      )}
     </div>
   );
 }
 
+function CreatePositionButton({
+  poolAddress,
+  collateralMint,
+  collateralUiAmount,
+  convexUser,
+}: {
+  poolAddress: Address;
+  convexUser: Doc<"users">;
+  collateralMint: Address;
+  collateralUiAmount: number;
+}) {
+  const { lowerBin, upperBin } = useCreatePositionRangeStore();
+  const [confirmationModal, setConfirmationModal] = useState(false);
+  const collateralTokenBalance = useTokenBalance({
+    address: convexUser.address,
+    mint: collateralMint,
+  });
+
+  const solBalance = useTokenBalance({
+    address: convexUser.address,
+    mint: mints.sol,
+  });
+
+  const insufficientBalance = collateralUiAmount > collateralTokenBalance.balance;
+
+  // 2. Rent requirement — different per token type
+  const notEnoughForRent =
+    collateralMint === mints.sol
+      ? // SOL deposit → rent taken from the same balance
+        solBalance.balance < collateralUiAmount + AMOUNTS_TO_OPEN_DLMM_POSITION
+      : // USDC deposit → rent still needs SOL
+        solBalance.balance < AMOUNTS_TO_OPEN_DLMM_POSITION;
+
+  const disableButton = collateralUiAmount <= 0 || insufficientBalance || notEnoughForRent || !lowerBin || !upperBin;
+
+  return (
+    <>
+      <Button
+        variant="liquidPrimary"
+        className="mb-0 mt-auto"
+        onClick={() => setConfirmationModal(true)}
+        disabled={disableButton}
+      >
+        {insufficientBalance
+          ? `Insufficient ${tokensMetadata[collateralMint].symbol}`
+          : notEnoughForRent
+            ? "Insufficient funds for rent"
+            : "Create position"}
+      </Button>
+
+      <Modal
+        title={"Confirm Position"}
+        main={
+          <MnMSuspense fallback={<ConfirmPositionContentSkeleton />}>
+            <ConfirmPositionContent
+              convexUser={convexUser}
+              poolAddress={poolAddress}
+              onClose={() => setConfirmationModal(false)}
+            />
+          </MnMSuspense>
+        }
+        show={confirmationModal}
+        onClose={() => setConfirmationModal(false)}
+      />
+    </>
+  );
+}
 export function CreatePositionPanelSkeleton() {
   return (
-    <div className="flex flex-col w-full">
+    <div className="flex flex-col w-full h-full ">
       <Row fullWidth className="mb-3">
         <div className="text-text text-sm">Collateral</div>
         <Skeleton className="w-12 h-3" />
@@ -176,6 +261,10 @@ export function CreatePositionPanelSkeleton() {
 
       <div className="text-text text-sm text-left mb-3 mt-5">Set Asset Split</div>
       <AssetSplitSkelton />
+
+      <Button variant="liquidPrimary" className="mb-0 mt-auto" disabled>
+        Create Position
+      </Button>
     </div>
   );
 }

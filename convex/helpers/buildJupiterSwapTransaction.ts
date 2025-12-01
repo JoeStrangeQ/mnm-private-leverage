@@ -171,8 +171,5 @@ export async function buildAndSimulateJupiterSwap(params: {
     };
   }
 
-  console.log("from sim", simRes.tokenBalancesChange[quote.outputMint]);
-  console.log("from quote", quote.otherAmountThreshold);
-
   return { ok: true as const, tx, quote };
 }
