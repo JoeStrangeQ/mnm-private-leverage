@@ -8,8 +8,9 @@
  * @module
  */
 
+import type * as actions_dlmmPosition_createPosition from "../actions/dlmmPosition/createPosition.js";
 import type * as actions_dlmmPosition_createPositionV2 from "../actions/dlmmPosition/createPositionV2.js";
-import type * as actions_dlmmPosition_removeLiquidityV2 from "../actions/dlmmPosition/removeLiquidityV2.js";
+import type * as actions_dlmmPosition_removeLiquidity from "../actions/dlmmPosition/removeLiquidity.js";
 import type * as actions_fetch_dlmm from "../actions/fetch/dlmm.js";
 import type * as actions_fetch_tokenMetadata from "../actions/fetch/tokenMetadata.js";
 import type * as actions_fetch_tokenPrices from "../actions/fetch/tokenPrices.js";
@@ -56,8 +57,9 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "actions/dlmmPosition/createPosition": typeof actions_dlmmPosition_createPosition;
   "actions/dlmmPosition/createPositionV2": typeof actions_dlmmPosition_createPositionV2;
-  "actions/dlmmPosition/removeLiquidityV2": typeof actions_dlmmPosition_removeLiquidityV2;
+  "actions/dlmmPosition/removeLiquidity": typeof actions_dlmmPosition_removeLiquidity;
   "actions/fetch/dlmm": typeof actions_fetch_dlmm;
   "actions/fetch/tokenMetadata": typeof actions_fetch_tokenMetadata;
   "actions/fetch/tokenPrices": typeof actions_fetch_tokenPrices;

@@ -1,6 +1,7 @@
 import { Infer } from "convex/values";
 
 import {
+  AddressLookupTableAccount,
   ComputeBudgetProgram,
   PublicKey,
   SystemProgram,
@@ -11,6 +12,7 @@ import {
 import { connection } from "../convexEnv";
 import { TitanSwapInstructionV } from "../types/titanSwapQuote";
 import { getRandomNozomiTipPubkey } from "./nozomi";
+import { getCachedALT } from "../services/solana";
 
 const TITAN_JITO_FRONT_RUN = "jitodontfronttitana111111111111111111111111";
 export async function buildTitanSwapTransaction({
@@ -73,16 +75,16 @@ export async function buildTitanSwapTransaction({
   }
 
   // const a = ixList.filter((_, i) => i !== 2);
-  const fetchALT = lookupTables.map((lt) =>
-    connection.getAddressLookupTable(new PublicKey(lt)).then((res) => res.value)
-  );
-  const altAccounts = await Promise.all(fetchALT);
+  const altAccounts = await Promise.all(lookupTables.map((lt) => getCachedALT(lt)));
+
+  // Filter null values (missing ALTs)
+  const alts = altAccounts.filter((a): a is AddressLookupTableAccount => a !== null);
 
   const message = new TransactionMessage({
     payerKey: new PublicKey(userAddress),
     recentBlockhash: options?.recentBlockhash ?? (await connection.getLatestBlockhash()).blockhash,
     instructions: ixList,
-  }).compileToV0Message(altAccounts.filter((a) => a !== null));
+  }).compileToV0Message(alts);
 
   return new VersionedTransaction(message);
 }

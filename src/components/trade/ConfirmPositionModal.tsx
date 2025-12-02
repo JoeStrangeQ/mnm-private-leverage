@@ -35,7 +35,7 @@ export function ConfirmPositionContent({
   const { collateralMint, collateralUiAmount, tokenXSplit, liquidityShape, resetCreatePositionState } =
     useCreatePositionState();
   const { lowerBin, upperBin, updateUpperLowerBins } = useCreatePositionRangeStore();
-  const createPosition = useAction(api.actions.dlmmPosition.createPositionV2.createPosition);
+  const createPosition = useAction(api.actions.dlmmPosition.createPosition.createPosition);
 
   const { refetch: refetchBalances } = useBalances({ address: toAddress(convexUser.address) });
 

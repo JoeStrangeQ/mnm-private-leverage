@@ -10,6 +10,7 @@ import {
 import { privy, privyAuthContext, PrivyWallet } from "../privy";
 import { getJitoBundleStatus, getJitoInflightBundleStatus, getJitoTipInfo, sendJitoBundle } from "../services/jito";
 import { toVersioned } from "../utils/solana";
+import bs58 from "bs58";
 
 const CU_LIMIT = 1_400_000;
 const JITO_TIP_ACCOUNTS = [
@@ -23,8 +24,14 @@ const JITO_TIP_ACCOUNTS = [
   "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT",
 ];
 export type TipSpeed = "low" | "medium" | "fast" | "extraFast";
+export const TIP_SPEED_TO_LAMPORTS: Record<TipSpeed, number> = {
+  low: Math.round(0.001 * LAMPORTS_PER_SOL), // 0.001 SOL
+  medium: Math.round(0.0025 * LAMPORTS_PER_SOL), // 0.0025 SOL
+  fast: Math.round(0.005 * LAMPORTS_PER_SOL), // 0.005 SOL
+  extraFast: Math.round(0.01 * LAMPORTS_PER_SOL), // 0.01 SOL
+};
 
-export async function sendAndConfirmJitoBundle({
+export async function signAndSendJitoBundle({
   transactions,
   userWallet,
 }: {
@@ -43,30 +50,21 @@ export async function sendAndConfirmJitoBundle({
       })
       .then((r) => r.signed_transaction)
   );
-
   const bundleBase64Txs = await Promise.all(signTransactions);
-  console.log("Bundle", bundleBase64Txs);
-  // const sim = await simulateBundle(bundleBase64Txs);
-  // const failedTxSim = sim.transactionResults.find((s) => s.err);
-  // if (failedTxSim) {
-  //   throw new Error(`Simulation failed: ${failedTxSim.err?.message ?? JSON.stringify(failedTxSim.err)}`);
-  // }
 
-  // console.log("Sim", JSON.stringify(sim, undefined, 2));
+  const txIds = bundleBase64Txs.map((txnBase64) => {
+    const signedTx = VersionedTransaction.deserialize(Buffer.from(txnBase64, "base64"));
+    const signature = bs58.encode(signedTx.signatures[0]);
+
+    return signature;
+  });
 
   console.log("Bundledtxs", bundleBase64Txs);
+  console.log("Signatures", txIds);
 
   const { bundleId } = await sendJitoBundle(bundleBase64Txs);
-  const finalStatus = await confirmInflightBundle({ bundleId });
 
-  if (!finalStatus?.found) {
-    throw new Error(`Bundle ${bundleId} not found after submission.`);
-  }
-  if (!finalStatus.txs?.length) {
-    throw new Error(`Bundle ${bundleId} landed but no txs returned.`);
-  }
-
-  return { bundleId, txIds: finalStatus.txs };
+  return { bundleId, txIds };
 }
 
 export async function confirmInflightBundle({
@@ -111,10 +109,11 @@ export async function buildTipTx({
   recentBlockhash: string;
   speed: TipSpeed;
 }) {
-  const tipInLamp = 1_000_000; //await getTipLamportsForSpeed(speed);
-  const tipAccount = new PublicKey(JITO_TIP_ACCOUNTS[Date.now() % JITO_TIP_ACCOUNTS.length]);
-  const payer = new PublicKey(payerAddress);
+  // const tipInLamp =  await getTipLamportsForSpeed(speed);
 
+  const tipAccount = new PublicKey(getRandomJitoTipAccount());
+  const payer = new PublicKey(payerAddress);
+  const tipInLamp = TIP_SPEED_TO_LAMPORTS[speed];
   const ix = SystemProgram.transfer({
     fromPubkey: payer,
     toPubkey: tipAccount,
@@ -171,4 +170,8 @@ function cuPriceFromTip(tipLamports: number, cuUnits = CU_LIMIT) {
     cuLimit: cuUnits,
     cuPriceMicroLamports: Math.max(1, Math.round((cuFeeLamports * 1_000_000) / cuUnits)),
   };
+}
+
+export function getRandomJitoTipAccount(): string {
+  return JITO_TIP_ACCOUNTS[Math.floor(Math.random() * JITO_TIP_ACCOUNTS.length)];
 }

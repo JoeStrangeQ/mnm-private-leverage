@@ -1,11 +1,13 @@
+import BN from "bn.js";
 import { Transaction, VersionedTransaction } from "@solana/web3.js";
 import { Address, mints, toVersioned } from "../utils/solana";
 import { simulateTransaction } from "../services/solana";
 
 type TokenAmountRes = {
-  rawAmount: bigint;
+  rawAmount: BN;
   decimals: number;
 };
+
 export async function simulateAndGetTokensBalance({
   userAddress,
   transaction,
@@ -25,33 +27,40 @@ export async function simulateAndGetTokensBalance({
   const preTokenBalances: Record<string, TokenAmountRes> = {};
   const postTokenBalances: Record<string, TokenAmountRes> = {};
 
+  //
+  // PRE TOKEN BALANCES
+  //
   for (const b of sim.preTokenBalances) {
     if (b.owner === userAddress) {
       preTokenBalances[b.mint] = {
-        rawAmount: BigInt(b.uiTokenAmount.amount),
+        rawAmount: new BN(b.uiTokenAmount.amount),
         decimals: b.uiTokenAmount.decimals,
       };
     }
   }
 
+  //
+  // POST TOKEN BALANCES & DIFF
+  //
   for (const post of sim.postTokenBalances) {
     if (post.owner !== userAddress) continue;
 
-    postTokenBalances[post.mint] = {
-      rawAmount: BigInt(post.uiTokenAmount.amount),
-      ...post.uiTokenAmount,
-    };
-
     const mint = post.mint;
+    const postAmountBN = new BN(post.uiTokenAmount.amount);
 
-    const pre = preTokenBalances[mint] ?? {
-      rawAmount: 0n,
-      decimals: 0,
+    postTokenBalances[mint] = {
+      rawAmount: postAmountBN,
+      decimals: post.uiTokenAmount.decimals,
     };
 
-    const postAmount = BigInt(post.uiTokenAmount.amount);
+    const pre =
+      preTokenBalances[mint] ??
+      ({
+        rawAmount: new BN(0),
+        decimals: post.uiTokenAmount.decimals,
+      } satisfies TokenAmountRes);
 
-    const diff = postAmount - pre.rawAmount;
+    const diff = postAmountBN.sub(pre.rawAmount);
 
     tokenBalancesChange[mint] = {
       rawAmount: diff,
@@ -59,12 +68,18 @@ export async function simulateAndGetTokensBalance({
     };
   }
 
+  //
+  // SOL CHANGES – use sim.preBalances/postBalances (lamports)
+  //
   const accountKeys = versionedTx.message.staticAccountKeys.map((k) => k.toBase58());
   const userIndex = accountKeys.indexOf(userAddress);
   if (userIndex === -1) throw new Error("Couldn't find user index");
 
-  const solDelta = BigInt(sim.postBalances[userIndex]) - BigInt(sim.preBalances[userIndex]);
-  if (solDelta !== 0n) {
+  const solPre = new BN(sim.preBalances[userIndex]);
+  const solPost = new BN(sim.postBalances[userIndex]);
+  const solDelta = solPost.sub(solPre);
+
+  if (!solDelta.isZero()) {
     tokenBalancesChange[mints.sol] = {
       rawAmount: solDelta,
       decimals: 9,
