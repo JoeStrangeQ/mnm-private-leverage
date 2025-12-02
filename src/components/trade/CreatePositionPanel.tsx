@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { AMOUNTS_TO_OPEN_DLMM_POSITION, CollateralDepositInput, MaxBalance } from "../CollateralDepositInput";
 import { Row } from "../ui/Row";
 import { useConvexUser } from "~/providers/UserStates";
-import { Address, mints, tokensMetadata } from "../../../convex/utils/solana";
+import { Address, mints, toAddress, tokensMetadata } from "../../../convex/utils/solana";
 import { MnMSuspense } from "../MnMSuspense";
 import { Skeleton } from "../ui/Skeleton";
 import { BinDistribution, BinDistributionSkeleton, LiquidityShape } from "../BinDistribution";
@@ -16,6 +16,9 @@ import { Button } from "../ui/Button";
 import { ConfirmPositionContent, ConfirmPositionContentSkeleton } from "./ConfirmPositionModal";
 import { Doc } from "../../../convex/_generated/dataModel";
 import { Modal } from "../ui/Modal";
+import { useAction } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import { startTrackingAction } from "../ActionTracker";
 
 export type CreatePositionState = {
   collateralMint: Address;
@@ -105,9 +108,25 @@ export function CreatePositionPanel({ poolAddress }: { poolAddress: Address }) {
     });
   }, [pathname, poolAddress]);
 
+  const r = useAction(api.actions.dlmmPosition.removeLiquidity.removeLiquidity);
   return (
     <div className="flex flex-col w-full h-full">
       <Row fullWidth className="mb-3">
+        <Button
+          onClick={() => {
+            const re = r({
+              positionPubkey: toAddress("ApT27omnUH6RhjK6N5xKLZJpvUpMFe5F6fjTt7BiBP16"),
+              percentageToWithdraw: 100,
+              trigger: "manual",
+            });
+            startTrackingAction({
+              type: "close_position",
+              action: re,
+            });
+          }}
+        >
+          Click me
+        </Button>
         <div className="text-text text-sm">Collateral</div>
         {convexUser && (
           <MnMSuspense fallback={<Skeleton className="w-12 h-3" />}>

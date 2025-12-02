@@ -14,24 +14,26 @@
 // import BN from "bn.js";
 // import {
 //   tokensMetadata,
-//   mints,
 //   toAddress,
 //   toVersioned,
 //   Address,
-//   isTokenClose,
-//   isAtaCreation,
+//   getCuInstructions,
+//   mints,
+//   fastTransactionConfirm,
 // } from "../../utils/solana";
 // import { rawAmountToAmount, safeBigIntToNumber } from "../../utils/amounts";
-// import { getSingleSwapQuote } from "../../services/mnmServer";
-// import { buildTitanSwapTransaction } from "../../helpers/buildTitanSwapTransaction";
 // import { connection } from "../../convexEnv";
-// import { buildTipTx, sendAndConfirmJitoBundle } from "../../helpers/jito";
+// import { buildTipTx, confirmInflightBundle, signAndSendJitoBundle } from "../../helpers/jito";
 // import DLMM, { PositionData } from "@meteora-ag/dlmm";
-// import { SwapQuotes } from "../../helpers/normalizeServerSwapQuote";
-// import { buildTransferTokenTransaction } from "../../helpers/buildTransferTokenTransaction";
 // import { Doc, Id } from "../../_generated/dataModel";
 // import { vTriggerType } from "../../schema/activities";
-// import { sendNozomiTransaction } from "../../helpers/nozomi";
+// import { buildJupSwapTransaction } from "../../helpers/buildJupiterSwapTransaction";
+// import { simulateAndGetTokensBalance } from "../../helpers/simulateAndGetTokensBalance";
+// import { tryCatch } from "../../utils/tryCatch";
+// import { SwapSpec } from "../../helpers/executeSwapsWithNozomi";
+// import { getJupiterTokenPrices, JupQuoteResponse } from "../../services/jupiter";
+// import { buildTransferMnMTx } from "../../helpers/transferMnMFees";
+// import { ActionRes } from "../../types/actionResults";
 
 // export const removeLiquidity = action({
 //   args: {
@@ -40,8 +42,9 @@
 //     percentageToWithdraw: v.number(),
 //     fromBinId: v.optional(v.number()),
 //     toBinId: v.optional(v.number()),
+//     //TODO: add optional fee amounts and swap quotes (when preforming from the front-end)
 //   },
-//   handler: async (ctx, args) => {
+//   handler: async (ctx, args): Promise<ActionRes<"close_position">> => {
 //     try {
 //       const { user, userWallet } = await authenticateUser({ ctx });
 //       if (!user) throw new Error("Couldn't find user");
@@ -52,54 +55,25 @@
 //       if (!position) throw new Error(`Position ${positionPubkey} not found`);
 
 //       const dlmmPoolConn = await getDlmmPoolConn(position.poolAddress);
-
 //       const { positionData: onChainPosition } = await dlmmPoolConn.getPosition(new PublicKey(positionPubkey));
-
-//       const { xPositionAmount, yPositionAmount, claimableFeeX, claimableFeeY } = computeWithdrawAndFees({
-//         positionData: onChainPosition,
-//         lowerBinId: args.fromBinId ?? position.details.lowerBin.id,
-//         upperBinId: args.toBinId ?? position.details.upperBin.id,
-//       });
 
 //       const userAddress = toAddress(userWallet.address);
 //       const xMint = toAddress(position.tokenX.mint);
 //       const yMint = toAddress(position.tokenY.mint);
 //       const outputMint = toAddress(position.collateral.mint);
-//       const outputDecimals = tokensMetadata[outputMint].decimals;
-//       if (!outputDecimals) throw new Error("Unknown output token");
 
-//       const xWithdrew = xPositionAmount.add(claimableFeeX);
-//       const yWithdrew = yPositionAmount.add(claimableFeeY);
-//       const swapSpecs = [
-//         { mint: xMint, amount: xWithdrew },
-//         { mint: yMint, amount: yWithdrew },
-//       ];
-
-//       const swapQuotePromises = swapSpecs
-//         .filter(({ mint, amount }) => !amount.isZero() && mint !== outputMint)
-//         .map(({ mint, amount }) =>
-//           //should do get Single swap quote only when there is not quotes we sending ,
-//           // when removing liquidly from the front-end we will show a quote like we doing in create position.
-//           getSingleSwapQuote({
-//             userAddress,
-//             inputMint: mint,
-//             outputMint: outputMint,
-//             rawAmount: safeBigIntToNumber(amount, `swap ${mint}`),
-//             slippageBps: 1000,
-//           })
-//         );
-
-//       const swapQuotes = await Promise.all(swapQuotePromises);
+//       const claimableFeeX = onChainPosition.feeX;
+//       const claimableFeeY = onChainPosition.feeY;
 
 //       const { blockhash } = await connection.getLatestBlockhash();
-//       const { tipTx, cuPriceMicroLamports, cuLimit, tipInLamp } = await buildTipTx({
-//         speed: "extraFast",
+//       const { tipTx, cuPriceMicroLamports, cuLimit } = await buildTipTx({
+//         speed: "fast",
 //         payerAddress: userWallet.address,
 //         recentBlockhash: blockhash,
 //       });
 
-//       const { removeTx } = await buildRemoveLiquidityTx({
-//         userAddress: userWallet.address,
+//       const { removeTx, xRemoved, yRemoved } = await buildAndSimulateRemoveLiquidityTx({
+//         userAddress,
 //         dlmmPoolConn,
 //         fromBinId: args.fromBinId ?? position.details.lowerBin.id,
 //         toBinId: args.toBinId ?? position.details.upperBin.id,
@@ -112,85 +86,84 @@
 //         },
 //       });
 
-//       let outReceivedRawAmount = 0;
-//       const swapsTxs = await Promise.all(
-//         swapQuotes.map((q) => {
-//           const quote = Object.values(q.quotes)[0];
-//           if (!quote) {
-//             throw new Error("We couldn’t find a valid swap route to the pool’s pair assets.");
-//           }
-//           outReceivedRawAmount += quote.outAmount;
-//           const { instructions, addressLookupTables } = quote;
-//           return buildTitanSwapTransaction({
+//       const swapSpecs: SwapSpec[] = [
+//         { inputMint: xMint, outputMint, amount: xRemoved, slippageBps: 150 },
+//         { inputMint: yMint, outputMint, amount: yRemoved, slippageBps: 150 },
+//       ];
+
+//       const buildSwaps = swapSpecs
+//         .filter(({ inputMint, amount }) => !amount.isZero() && inputMint !== outputMint)
+//         .map(({ inputMint, amount }) => {
+//           return buildJupSwapTransaction({
 //             userAddress,
-//             instructions,
-//             lookupTables: addressLookupTables,
-//             options: {
-//               cuLimit,
-//               cuPriceMicroLamports,
-//               recentBlockhash: blockhash,
-//               removeJitoFrontRun: true,
-//             },
+//             inputMint,
+//             inputAmount: safeBigIntToNumber(amount, `Swap ${inputMint}`),
+//             outputMint,
+//             blockhash,
+//             slippageBps: 100,
+//             options: { skipUserAccountsRpcCalls: true },
 //           });
-//         })
-//       );
+//         });
+
+//       const swapsRes = await tryCatch(Promise.all(buildSwaps));
+//       if (swapsRes.error) {
+//         return {
+//           status: "failed",
+//           errorMsg: "Couldn't build swaps",
+//         };
+//       }
 
 //       const transactions: { tx: VersionedTransaction; description: string }[] = [
 //         {
 //           tx: toVersioned(removeTx),
 //           description: percentageToWithdraw === 100 ? "Close Position" : "Remove Liquidity",
 //         },
-//         ...swapsTxs.map((swapTx, i) => {
-//           return {
-//             tx: swapTx,
-//             description: `Swap #${i + 1}`,
-//           };
-//         }),
+//         ...swapsRes.data.map(({ tx }, i) => ({
+//           tx,
+//           description: `Swap #${i + 1}`,
+//         })),
 //       ];
 
+//       const { totalFeesClaimedInOutputToken, totalReceivedOutToken } = computeTotalFeesClaimedInOutputToken({
+//         swapQuotes: swapsRes.data.map((s) => s.quote),
+//         xMint,
+//         yMint,
+//         xRemoved,
+//         yRemoved,
+//         feeX: claimableFeeX,
+//         feeY: claimableFeeY,
+//       });
+
+//       let tokenOutputAmount = safeBigIntToNumber(totalReceivedOutToken, "tokenOutputAmount");
 //       if (percentageToWithdraw === 100 && (!claimableFeeX.isZero() || !claimableFeeY.isZero())) {
-//         const { outFromX, outFromY } = computeOutFromPairTokens({ swapQuotes, xMint, yMint });
-//         const { totalOutTokenFee } = computeOutTokenFeeValue({
-//           xWithdrew,
-//           yWithdrew,
-//           outFromX,
-//           outFromY,
-//           feeX: claimableFeeX,
-//           feeY: claimableFeeY,
+//         const mnmFeeClaimTxRes = await buildTransferMnMTx({
+//           userWallet,
+//           outputMint,
+//           totalFeesInRawOutputToken: totalFeesClaimedInOutputToken,
 //         });
-//         const mnmFeeClaimTx = await buildTransferTokenTransaction({
-//           mint: new PublicKey(outputMint),
-//           from: new PublicKey(userAddress),
-//           recipient: new PublicKey("ELPSuvvkKDGSXSVoY79akTAJpnyNvS2Yzmmwb4itucxz"),
-//           rawAmount: Math.floor(totalOutTokenFee.toNumber() * 0.05),
-//           options: {
-//             cuLimit,
-//             cuPriceMicroLamports,
-//             recentBlockhash: blockhash,
-//           },
-//         });
-//         transactions.push({ tx: toVersioned(mnmFeeClaimTx), description: "MnM Fee" });
+
+//         if (mnmFeeClaimTxRes) {
+//           transactions.push({ tx: toVersioned(mnmFeeClaimTxRes.mnmFeeClaimTx), description: "MnM Fee" });
+//           tokenOutputAmount = tokenOutputAmount - mnmFeeClaimTxRes.mnmFeeRawAmount;
+//         }
 //       }
 
 //       transactions.push({ tx: tipTx, description: "Jito Tip" });
-
-//       // await sendNozomiTransaction(swapsTxs[0], userWallet);
-//       const { txIds, bundleId } = await sendAndConfirmJitoBundle({
+//       const { txIds, bundleId } = await signAndSendJitoBundle({
 //         userWallet,
 //         transactions: transactions.map((tx) => tx.tx),
 //       });
 
-//       const [xPrice, yPrice, collateralPrice] = await Promise.all([
-//         ctx.runAction(api.actions.fetch.tokenPrices.getJupiterTokenPriceAction, {
-//           mint: xMint,
-//         }),
-//         ctx.runAction(api.actions.fetch.tokenPrices.getJupiterTokenPriceAction, {
-//           mint: yMint,
-//         }),
-//         ctx.runAction(api.actions.fetch.tokenPrices.getJupiterTokenPriceAction, {
-//           mint: outputMint,
-//         }),
-//       ]);
+//       await confirmInflightBundle({ bundleId });
+//       //   const txsConfirmRes = await fastTransactionConfirm([txIds[0]], 7_000);
+//       //   if (txsConfirmRes[0].err) {
+//       //     throw new Error(`Transaction ${txsConfirmRes[0].signature} failed: ${JSON.stringify(txsConfirmRes[0].err)}`);
+//       //   }
+
+//       const prices = await getJupiterTokenPrices({ mints: [xMint, yMint, outputMint] });
+//       const xPrice = prices[xMint]?.usdPrice ?? 0;
+//       const yPrice = prices[yMint]?.usdPrice ?? 0;
+//       const collateralPrice = prices[outputMint]?.usdPrice ?? 0;
 
 //       const transactionIds = transactions.map(({ description }, i) => {
 //         return {
@@ -198,22 +171,21 @@
 //           description,
 //         };
 //       });
-
-//       let activityId = "";
+//       let activityId = "" as Id<"activities">;
 //       if (percentageToWithdraw === 100) {
 //         const tokensData: TokensData = {
 //           outputToken: {
 //             mint: outputMint,
-//             rawAmount: outReceivedRawAmount,
+//             rawAmount: tokenOutputAmount,
 //             usdPrice: collateralPrice,
 //           },
 //           tokenX: {
-//             withdrawRaw: xWithdrew.toNumber(),
+//             withdrawRaw: xRemoved.toNumber(),
 //             claimedFee: claimableFeeX.toNumber(),
 //             usdPrice: xPrice,
 //           },
 //           tokenY: {
-//             withdrawRaw: yWithdrew.toNumber(),
+//             withdrawRaw: yRemoved.toNumber(),
 //             claimedFee: claimableFeeY.toNumber(),
 //             usdPrice: yPrice,
 //           },
@@ -228,11 +200,9 @@
 //               transactionIds,
 //               details: {
 //                 trigger,
-//                 bundleId,
 //                 pnl,
 //                 poolAddress: position.poolAddress,
 //                 positionType: "DLMM",
-//                 jitoTipLamports: tipInLamp,
 //                 ...tokensData,
 //               },
 //             },
@@ -246,13 +216,11 @@
 //         //create remove liquidity activity
 //         // calculate realized pnl and add it to the true pnl calculation.
 //       }
+//       console.timeEnd("DB");
 
 //       return {
 //         status: "success",
-//         result: {
-//           activityId,
-//           positionPubkey,
-//         },
+//         result: { activityId, closedPositionId: "" },
 //       };
 //     } catch (error: any) {
 //       console.error("remove liquidity failed:", error);
@@ -264,7 +232,7 @@
 //   },
 // });
 
-// async function buildRemoveLiquidityTx({
+// async function buildAndSimulateRemoveLiquidityTx({
 //   userAddress,
 //   positionPubkey,
 //   dlmmPoolConn,
@@ -279,12 +247,10 @@
 //   fromBinId: number;
 //   toBinId: number;
 //   percentageToWithdraw: number;
-//   options?: {
+//   options: {
 //     cuLimit?: number;
 //     cuPriceMicroLamports?: number;
 //     recentBlockhash: string;
-//     skipAtaCreateIx?: boolean;
-//     skipAtaCloseIx?: boolean;
 //   };
 // }) {
 //   // //note: multiple tx only when there is more then 69 bins.
@@ -295,30 +261,16 @@
 //     toBinId,
 //     bps: new BN(Math.round(percentageToWithdraw * 100)),
 //     shouldClaimAndClose: percentageToWithdraw === 100,
-//     skipUnwrapSOL: true,
 //   });
 
-//   const cuIxs: TransactionInstruction[] = [];
-//   if (options?.cuLimit || options?.cuPriceMicroLamports) {
-//     cuIxs.push(
-//       ComputeBudgetProgram.setComputeUnitLimit({
-//         units: options.cuLimit ?? 1_000_000,
-//       }),
-//       ComputeBudgetProgram.setComputeUnitPrice({
-//         microLamports: options.cuPriceMicroLamports ?? 1_000_000,
-//       })
-//     );
-//   }
-
+//   const cuIxs: TransactionInstruction[] = getCuInstructions({
+//     limit: options?.cuLimit,
+//     price: options?.cuPriceMicroLamports,
+//   });
 //   //remove Meteora's compute limit and use our own .
 //   const filteredIxs = removeTx.instructions.filter((ix) => {
-//     if (ix.programId.equals(ComputeBudgetProgram.programId)) return false;
-//     // if (options?.skipAtaCreateIx && isAtaCreation(ix)) return false;
-//     // if (options?.skipAtaCloseIx && isTokenClose(ix)) return false;
-//     return true;
+//     return !ix.programId.equals(ComputeBudgetProgram.programId);
 //   });
-
-//   // filteredIxs.slice(0, -1);
 
 //   const message = new TransactionMessage({
 //     payerKey: new PublicKey(userAddress),
@@ -328,8 +280,24 @@
 
 //   const versionedTx = new VersionedTransaction(message);
 
+//   const simRes = await simulateAndGetTokensBalance({ userAddress: toAddress(userAddress), transaction: versionedTx });
+
+//   if (simRes.sim.err) {
+//     throw new Error("Failed to simulate remove liquidity transaction");
+//   }
+
+//   const xMint = dlmmPoolConn.lbPair.tokenXMint.toBase58();
+//   const yMint = dlmmPoolConn.lbPair.tokenXMint.toBase58();
+//   console.log("x removed", simRes.tokenBalancesChange[xMint].rawAmount.toString());
+//   console.log("y removed", simRes.tokenBalancesChange[yMint].rawAmount.toString());
+//   const xDelta = simRes.tokenBalancesChange[xMint]?.rawAmount ?? new BN(0);
+//   const yDelta = simRes.tokenBalancesChange[yMint]?.rawAmount ?? new BN(0);
+//   const xRemoved = BN.max(adjustSolRent(xMint, xDelta), new BN(0));
+//   const yRemoved = BN.max(adjustSolRent(yMint, yDelta), new BN(0));
 //   return {
 //     removeTx: versionedTx,
+//     xRemoved,
+//     yRemoved,
 //   };
 // }
 
@@ -379,109 +347,10 @@
 //   };
 // }
 
-// // function adjustSolRent(mint: string, amount: bigint): bigint {
-// //   const rent = BigInt(57_000_000);
-// //   const res = mint === mints.sol ? amount - rent : amount;
-// //   return res > 0n ? res : 0n;
-// // }
-
-// function computeWithdrawAndFees({
-//   positionData,
-//   lowerBinId,
-//   upperBinId,
-// }: {
-//   positionData: PositionData;
-//   lowerBinId: number;
-//   upperBinId: number;
-// }) {
-//   let xPositionAmount = new BN(0);
-//   let yPositionAmount = new BN(0);
-
-//   let feeX = new BN(0);
-//   let feeY = new BN(0);
-
-//   for (const b of positionData.positionBinData) {
-//     const binId = b.binId;
-
-//     // Check if bin is inside the active withdraw range
-//     if (binId >= lowerBinId && binId <= upperBinId) {
-//       xPositionAmount = xPositionAmount.add(new BN(b.positionXAmount));
-//       yPositionAmount = yPositionAmount.add(new BN(b.positionYAmount));
-//     }
-
-//     // Fees accumulate over ALL bins, independent of range
-//     feeX = feeX.add(new BN(b.positionFeeXAmount));
-//     feeY = feeY.add(new BN(b.positionFeeYAmount));
-//   }
-
-//   return {
-//     xPositionAmount,
-//     yPositionAmount,
-//     claimableFeeX: feeX,
-//     claimableFeeY: feeY,
-//   };
-// }
-
-// function computeOutTokenFeeValue({
-//   xWithdrew,
-//   yWithdrew,
-//   feeX,
-//   feeY,
-//   outFromX,
-//   outFromY,
-// }: {
-//   xWithdrew: BN;
-//   yWithdrew: BN;
-//   feeX: BN;
-//   feeY: BN;
-//   outFromX: BN;
-//   outFromY: BN;
-// }) {
-//   let outputFromFeeX = new BN(0);
-//   let outputFromFeeY = new BN(0);
-
-//   if (!xWithdrew.isZero()) {
-//     outputFromFeeX = outFromX.mul(feeX).div(xWithdrew);
-//   }
-
-//   if (!yWithdrew.isZero()) {
-//     outputFromFeeY = outFromY.mul(feeY).div(yWithdrew);
-//   }
-
-//   return {
-//     outputFromFeeX,
-//     outputFromFeeY,
-//     totalOutTokenFee: outputFromFeeX.add(outputFromFeeY),
-//   };
-// }
-
-// function computeOutFromPairTokens({
-//   swapQuotes,
-//   xMint,
-//   yMint,
-// }: {
-//   swapQuotes: SwapQuotes[];
-//   xMint: string;
-//   yMint: string;
-// }) {
-//   let outFromX = new BN(0);
-//   let outFromY = new BN(0);
-
-//   for (const quote of swapQuotes) {
-//     const route = Object.values(quote.quotes)[0];
-//     if (!route) continue;
-
-//     const outAmount = new BN(route.outAmount);
-//     const inputMint = quote.inputMint;
-
-//     if (inputMint === xMint) {
-//       outFromX = outAmount;
-//     } else if (inputMint === yMint) {
-//       outFromY = outAmount;
-//     }
-//   }
-
-//   return { outFromX, outFromY };
+// function adjustSolRent(mint: string, amount: BN): BN {
+//   const rent = new BN(57000000);
+//   const res = mint === mints.sol ? amount.sub(rent) : amount;
+//   return res.isNeg() ? new BN(0) : res;
 // }
 
 // type TokensData = {
@@ -501,3 +370,49 @@
 //     usdPrice: number;
 //   };
 // };
+
+// function computeTotalFeesClaimedInOutputToken({
+//   swapQuotes,
+//   xMint,
+//   yMint,
+//   xRemoved,
+//   yRemoved,
+//   feeX,
+//   feeY,
+// }: {
+//   swapQuotes: JupQuoteResponse[];
+//   xMint: Address;
+//   yMint: Address;
+//   xRemoved: BN;
+//   yRemoved: BN;
+//   feeX: BN;
+//   feeY: BN;
+// }) {
+//   const { outAmountX, outAmountY } = swapQuotes.reduce(
+//     (acc, q) => {
+//       const out = new BN(q.outAmount);
+
+//       if (q.inputMint === xMint) acc.outAmountX = out;
+//       if (q.inputMint === yMint) acc.outAmountY = out;
+
+//       return acc;
+//     },
+//     { outAmountX: new BN(0), outAmountY: new BN(0) }
+//   );
+
+//   let outputFromFeeX = new BN(0);
+//   let outputFromFeeY = new BN(0);
+
+//   if (!xRemoved.isZero()) {
+//     outputFromFeeX = outAmountX.mul(feeX).div(xRemoved);
+//   }
+
+//   if (!yRemoved.isZero()) {
+//     outputFromFeeY = outAmountY.mul(feeY).div(yRemoved);
+//   }
+
+//   return {
+//     totalFeesClaimedInOutputToken: outputFromFeeX.add(outputFromFeeY),
+//     totalReceivedOutToken: outAmountX.add(outAmountY),
+//   };
+// }

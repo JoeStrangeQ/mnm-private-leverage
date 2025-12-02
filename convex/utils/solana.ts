@@ -73,52 +73,50 @@ export function getCuInstructions({ limit = 1_200_000, price = 1_200_000 } = {})
 
 export async function fastTransactionConfirm(signatures: string[], timeoutMs = 1500) {
   const start = Date.now();
-
   let latestStatuses = new Array(signatures.length).fill(null);
 
+  // Linear delay parameters
+  const startDelay = Math.min(50, Math.max(15, timeoutMs * 0.02)); // 2% of timeout
+  const increment = Math.min(25, Math.max(5, timeoutMs * 0.01)); // 1% of timeout
+  const maxDelay = 200;
+
+  let delay = startDelay;
+  let attempt = 0;
+
   while (Date.now() - start < timeoutMs) {
+    console.log("Calling getSignatures");
     const { value } = await connection.getSignatureStatuses(signatures);
     latestStatuses = value;
 
-    let allDecided = true;
+    let anyPending = false;
 
-    for (let i = 0; i < value.length; i++) {
-      const status = value[i];
-
+    for (const status of value) {
       if (!status) {
-        // still waiting
-        allDecided = false;
+        anyPending = true;
         continue;
       }
-
-      if (status.err) {
-        // tx failed
-        allDecided = true; // decided but failed
-        continue;
-      }
-
-      if (status.confirmationStatus !== "confirmed" && status.confirmationStatus !== "finalized") {
-        allDecided = false; // still pending
+      if (!status.err && status.confirmationStatus !== "confirmed" && status.confirmationStatus !== "finalized") {
+        anyPending = true;
       }
     }
 
-    if (allDecided) break;
+    if (!anyPending) break;
 
-    await new Promise((r) => setTimeout(r, 25));
+    // Linear increase
+    await new Promise((r) => setTimeout(r, delay));
+
+    attempt++;
+    delay = Math.min(startDelay + attempt * increment, maxDelay);
   }
 
-  // Now create structured output
   return signatures.map((sig, i) => {
     const status = latestStatuses[i];
 
     if (!status) return { signature: sig, status: "pending" as const };
-
     if (status.err) return { signature: sig, status: "failed" as const, err: status.err };
-
     if (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized") {
       return { signature: sig, status: "confirmed" as const };
     }
-
     return { signature: sig, status: "pending" as const };
   });
 }

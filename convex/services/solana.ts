@@ -1,7 +1,25 @@
-import { Transaction, VersionedTransaction } from "@solana/web3.js";
+import { AddressLookupTableAccount, PublicKey, Transaction, VersionedTransaction } from "@solana/web3.js";
 import { zSimulationResultSchema } from "../types/solanaRpcValidations";
 import { toVersioned } from "../utils/solana";
-import { RPC_URL } from "../convexEnv";
+import { connection, RPC_URL } from "../convexEnv";
+
+type ALTAccount = AddressLookupTableAccount | null;
+
+// 2. Cache stores promises that resolve to ALTAccount
+const altCache = new Map<string, Promise<ALTAccount>>();
+
+export function getCachedALT(address: string): Promise<ALTAccount> {
+  let existing = altCache.get(address);
+
+  if (!existing) {
+    // create promise that resolves to the `.value`
+    existing = connection.getAddressLookupTable(new PublicKey(address)).then((res) => res.value);
+
+    altCache.set(address, existing);
+  }
+
+  return existing;
+}
 
 export async function simulateTransaction(
   transaction: VersionedTransaction | Transaction,
