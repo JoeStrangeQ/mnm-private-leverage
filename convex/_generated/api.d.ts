@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as actions_dlmmPosition_claimFees from "../actions/dlmmPosition/claimFees.js";
 import type * as actions_dlmmPosition_createPosition from "../actions/dlmmPosition/createPosition.js";
 import type * as actions_dlmmPosition_removeLiquidity from "../actions/dlmmPosition/removeLiquidity.js";
 import type * as actions_fetch_dlmm from "../actions/fetch/dlmm.js";
@@ -61,6 +62,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "actions/dlmmPosition/claimFees": typeof actions_dlmmPosition_claimFees;
   "actions/dlmmPosition/createPosition": typeof actions_dlmmPosition_createPosition;
   "actions/dlmmPosition/removeLiquidity": typeof actions_dlmmPosition_removeLiquidity;
   "actions/fetch/dlmm": typeof actions_fetch_dlmm;

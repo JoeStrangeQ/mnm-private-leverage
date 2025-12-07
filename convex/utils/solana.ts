@@ -118,7 +118,7 @@ export async function fastTransactionConfirm(signatures: string[], timeoutMs = 1
       (!status ||
         (!status.err && status.confirmationStatus !== "confirmed" && status.confirmationStatus !== "finalized"))
     ) {
-      return { signature: sig, status: "failed" as const, err: status.err ?? "Timeout reached" };
+      return { signature: sig, status: "failed" as const, err: status?.err ?? "Timeout reached" };
     }
 
     if (!status) return { signature: sig, status: "pending" as const };

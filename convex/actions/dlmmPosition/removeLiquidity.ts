@@ -1,12 +1,13 @@
 "use node";
 import { v } from "convex/values";
-import { action, internalAction } from "../../_generated/server";
+import { action, ActionCtx, internalAction } from "../../_generated/server";
 import { authenticateUser, authenticateWithUserId, vPrivyWallet } from "../../privy";
 import { api, internal } from "../../_generated/api";
 import { getDlmmPoolConn } from "../../services/meteora";
 import {
   ComputeBudgetProgram,
   PublicKey,
+  Transaction,
   TransactionInstruction,
   TransactionMessage,
   VersionedTransaction,
@@ -24,7 +25,7 @@ import {
 import { rawAmountToAmount, safeBigIntToNumber } from "../../utils/amounts";
 import { connection } from "../../convexEnv";
 import { buildTipTx, signAndSendJitoBundle } from "../../helpers/jito";
-import DLMM, { PositionData } from "@meteora-ag/dlmm";
+import DLMM, { LbPosition, PositionData } from "@meteora-ag/dlmm";
 import { Doc, Id } from "../../_generated/dataModel";
 import { vTriggerType } from "../../schema/activities";
 import { buildJupSwapTransaction } from "../../helpers/buildJupiterSwapTransaction";
@@ -86,8 +87,8 @@ export const internalRemoveLiquidity = internalAction({
       if (!position) throw new Error(`Position ${positionPubkey} not found`);
 
       const dlmmPoolConn = await getDlmmPoolConn(position.poolAddress);
-      const { positionData: onChainPosition } = await dlmmPoolConn.getPosition(new PublicKey(positionPubkey));
-
+      const dlmmPosition = await dlmmPoolConn.getPosition(new PublicKey(positionPubkey));
+      const { positionData: onChainPosition } = dlmmPosition;
       const userAddress = toAddress(userWallet.address);
       const xMint = toAddress(position.tokenX.mint);
       const yMint = toAddress(position.tokenY.mint);
@@ -110,6 +111,7 @@ export const internalRemoveLiquidity = internalAction({
         toBinId: args.toBinId ?? position.details.upperBin.id,
         percentageToWithdraw,
         positionPubkey,
+        dlmmPosition,
         options: {
           cuLimit,
           cuPriceMicroLamports,
@@ -180,7 +182,7 @@ export const internalRemoveLiquidity = internalAction({
 
       transactions.push({ tx: tipTx, description: "Jito Tip" });
 
-      const { txIds } = await signAndSendJitoBundle({
+      const { txIds, bundleId } = await signAndSendJitoBundle({
         userWallet,
         transactions: transactions.map((tx) => tx.tx),
       });
@@ -220,7 +222,8 @@ export const internalRemoveLiquidity = internalAction({
             usdPrice: yPrice,
           },
         };
-        const pnl = calculatePnl({ position, onChainPosition, tokensData });
+
+        const pnl = await calculatePnl({ ctx, position, onChainPosition, tokensData });
         const [id] = await Promise.all([
           ctx.runMutation(internal.tables.activities.mutations.createActivity, {
             userId: args.userId,
@@ -228,6 +231,7 @@ export const internalRemoveLiquidity = internalAction({
               type: "close_position",
               relatedPositionPubkey: positionPubkey,
               transactionIds,
+              bundleId,
               details: {
                 trigger,
                 pnl,
@@ -271,6 +275,7 @@ async function buildAndSimulateRemoveLiquidityTx({
   fromBinId,
   toBinId,
   percentageToWithdraw,
+  dlmmPosition,
   options,
 }: {
   userAddress: string;
@@ -279,6 +284,7 @@ async function buildAndSimulateRemoveLiquidityTx({
   fromBinId: number;
   toBinId: number;
   percentageToWithdraw: number;
+  dlmmPosition: LbPosition;
   options: {
     cuLimit?: number;
     cuPriceMicroLamports?: number;
@@ -286,19 +292,33 @@ async function buildAndSimulateRemoveLiquidityTx({
   };
 }) {
   // //note: multiple tx only when there is more then 69 bins.
-  const [removeTx] = await dlmmPoolConn.removeLiquidity({
-    user: new PublicKey(userAddress),
-    position: new PublicKey(positionPubkey),
-    fromBinId,
-    toBinId,
-    bps: new BN(Math.round(percentageToWithdraw * 100)),
-    shouldClaimAndClose: percentageToWithdraw === 100,
-  });
+  let removeTx: Transaction | null = null;
+  const getRemoveLiqRes = await tryCatch(
+    dlmmPoolConn.removeLiquidity({
+      user: new PublicKey(userAddress),
+      position: new PublicKey(positionPubkey),
+      fromBinId,
+      toBinId,
+      bps: new BN(Math.round(percentageToWithdraw * 100)),
+      shouldClaimAndClose: percentageToWithdraw === 100,
+    })
+  );
+
+  if (getRemoveLiqRes.error?.message.includes("No liquidity to remove")) {
+    removeTx = await dlmmPoolConn.closePositionIfEmpty({
+      owner: new PublicKey(userAddress),
+      position: dlmmPosition,
+    });
+  }
+
+  if (!getRemoveLiqRes.data) throw new Error("Couldn't build remove liquidity transaction");
+  removeTx = getRemoveLiqRes.data[0];
 
   const cuIxs: TransactionInstruction[] = getCuInstructions({
     limit: options?.cuLimit,
     price: options?.cuPriceMicroLamports,
   });
+
   //remove Meteora's compute limit and use our own .
   const filteredIxs = removeTx.instructions.filter((ix) => {
     return !ix.programId.equals(ComputeBudgetProgram.programId);
@@ -333,49 +353,122 @@ async function buildAndSimulateRemoveLiquidityTx({
   };
 }
 
-function calculatePnl({
-  // ctx, //We will need to fetch remove+add liquidity events in the future as they effect the pnl
+async function calculatePnl({
+  ctx,
   position,
   onChainPosition,
   tokensData,
 }: {
-  // ctx: ActionCtx;
+  ctx: ActionCtx;
   position: Doc<"positions">;
   onChainPosition: PositionData;
   tokensData: TokensData;
 }) {
   const { tokenX: xInitial, tokenY: yInitial } = position;
+
   const xMetadata = tokensMetadata[xInitial.mint];
   const yMetadata = tokensMetadata[yInitial.mint];
+
+  const claimedFeesActivities = await ctx.runQuery(api.tables.activities.get.getClaimedFeesByPosition, {
+    positionPubkey: position.positionPubkey,
+  });
 
   const xCurrentPrice = tokensData.tokenX.usdPrice;
   const yCurrentPrice = tokensData.tokenY.usdPrice;
 
+  // -----------------------------
+  // Initial USD
+  // -----------------------------
   const xInitialUsdValue = rawAmountToAmount(xInitial.rawAmount, xMetadata.decimals) * xInitial.usdPrice;
+
   const yInitialUsdValue = rawAmountToAmount(yInitial.rawAmount, yMetadata.decimals) * yInitial.usdPrice;
 
+  const totalInitialUsd = xInitialUsdValue + yInitialUsdValue;
+
+  // -----------------------------
+  // Current USD (assets)
+  // -----------------------------
   const xCurrentUsdValue =
     rawAmountToAmount(parseFloat(onChainPosition.totalXAmount), xMetadata.decimals) * xCurrentPrice;
+
   const yCurrentUsdValue =
     rawAmountToAmount(parseFloat(onChainPosition.totalYAmount), yMetadata.decimals) * yCurrentPrice;
 
   const usdAssetPnl = xCurrentUsdValue - xInitialUsdValue + (yCurrentUsdValue - yInitialUsdValue);
 
-  const xTotalFeesRaw = onChainPosition.feeX.add(onChainPosition.totalClaimedFeeXAmount).toNumber();
-  const yTotalFeesRaw = onChainPosition.feeY.add(onChainPosition.totalClaimedFeeYAmount).toNumber();
-  const usdFeePnl =
-    rawAmountToAmount(xTotalFeesRaw, xMetadata.decimals) * tokensData.tokenX.usdPrice +
-    rawAmountToAmount(yTotalFeesRaw, yMetadata.decimals) * tokensData.tokenY.usdPrice;
+  // ============================================================
+  //  REALIZED FEES USD  (from harvested, price locked at claim)
+  //  TOTAL RAW CLAIMED (from claimedX / claimedY)
+  // ============================================================
+  const { realizedFeesUsd, totalRawClaimedX, totalRawClaimedY } = claimedFeesActivities?.reduce(
+    (acc, act) => {
+      if (act.type !== "claim_fees") return acc;
 
+      // -----------------------------
+      // USD realized (harvested)
+      // -----------------------------
+      const harvested = (act.details as any)?.harvested;
+      if (harvested) {
+        const { rawAmount, mint, usdPrice } = harvested;
+        const decimals = tokensMetadata[mint]?.decimals;
+
+        if (decimals != null) {
+          acc.realizedFeesUsd += rawAmountToAmount(rawAmount, decimals) * usdPrice;
+        }
+      }
+
+      // -----------------------------
+      // Total RAW claimed (token X + Y)
+      // -----------------------------
+      acc.totalRawClaimedX += act.details.claimedX?.rawAmount ?? 0;
+      acc.totalRawClaimedY += act.details.claimedY?.rawAmount ?? 0;
+
+      return acc;
+    },
+    {
+      realizedFeesUsd: 0,
+      totalRawClaimedX: 0,
+      totalRawClaimedY: 0,
+    }
+  ) ?? {
+    realizedFeesUsd: 0,
+    totalRawClaimedX: 0,
+    totalRawClaimedY: 0,
+  };
+
+  // ============================================================
+  // UNREALIZED FEES (still on-chain)
+  // ============================================================
+
+  const unclaimedRawFeesX = rawAmountToAmount(onChainPosition.feeX.toNumber(), xMetadata.decimals);
+  const unclaimedRawFeesY = rawAmountToAmount(onChainPosition.feeY.toNumber(), yMetadata.decimals);
+
+  const xUnrealizedFeeUsd = unclaimedRawFeesX * xCurrentPrice;
+  const yUnrealizedFeeUsd = unclaimedRawFeesY * yCurrentPrice;
+
+  const unrealizedFeesUsd = xUnrealizedFeeUsd + yUnrealizedFeeUsd;
+
+  // ============================================================
+  //  TOTAL FEE PnL (realized + unrealized)
+  // ============================================================
+  const usdFeePnl = realizedFeesUsd + unrealizedFeesUsd;
+
+  // ============================================================
+  //  TOTAL PnL
+  // ============================================================
   const totalPnl = usdAssetPnl + usdFeePnl;
-  const pctTotalPnl = totalPnl / (xInitialUsdValue + yInitialUsdValue);
 
+  const pctTotalPnl = totalInitialUsd > 0 ? totalPnl / totalInitialUsd : 0;
+
+  // ============================================================
+  // RETURN (correct + complete)
+  // ===========================================================
   return {
-    pctTotalPnl: pctTotalPnl,
+    pctTotalPnl,
     usdAssetPnl,
     usdFeePnl,
-    xTotalFeesRaw,
-    yTotalFeesRaw,
+    xTotalFeesRaw: totalRawClaimedX + unclaimedRawFeesX,
+    yTotalFeesRaw: totalRawClaimedY + unclaimedRawFeesY,
   };
 }
 

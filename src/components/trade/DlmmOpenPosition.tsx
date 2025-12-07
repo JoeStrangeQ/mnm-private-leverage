@@ -2,7 +2,7 @@ import { usePool } from "~/states/pools";
 import { cn } from "~/utils/cn";
 import { abbreviateAmount, formatUsdValue } from "~/utils/numberFormats";
 import { Doc } from "../../../convex/_generated/dataModel";
-import { Address, toAddress } from "../../../convex/utils/solana";
+import { Address, toAddress, tokensMetadata } from "../../../convex/utils/solana";
 import { MnMSuspense } from "../MnMSuspense";
 import { PoolTokenIcons } from "../TokenIcon";
 import { LabelValue } from "../ui/labelValueRow";
@@ -126,7 +126,7 @@ export function DlmmOpenPositionRow({ dbPosition }: { dbPosition: Doc<"positions
       </TableCell>
       <TableCell className="w-0 whitespace-nowrap pl-2">
         <Row justify="end" className="gap-2">
-          <ViewMoreButton />
+          <ViewMoreButton positionPubkey={positionPubkey} />
           <ClosePositionButton positionPubkey={positionPubkey} disable={isSlActivated || isTpActivated} />
         </Row>
       </TableCell>
@@ -167,15 +167,42 @@ function ClosePositionButton({ positionPubkey, disable }: { positionPubkey: Addr
   );
 }
 
-function ViewMoreButton() {
+function ViewMoreButton({ positionPubkey }: { positionPubkey: Address }) {
+  const claimFees = useAction(api.actions.dlmmPosition.claimFees.claimFees);
+
+  const claimFeesMut = useTanstackMut({
+    mutationFn: async () => {
+      console.log("Claimming fees");
+      const claimFeesPromise = claimFees({
+        isAutomated: false,
+        positionPubkey,
+      });
+
+      startTrackingAction({
+        type: "claim_fees",
+        action: claimFeesPromise,
+        onSuccess: async () => {
+          //refetch dllmm position here
+        },
+      });
+    },
+  });
   return (
-    <Button variant="neutral" className="px-2 py-1.5 border border-white/20 text-xs">
+    <Button
+      variant="neutral"
+      className="px-2 py-1.5 border border-white/20 text-xs"
+      onClick={() => {
+        console.log("s");
+        claimFeesMut.mutate();
+      }}
+      loading={claimFeesMut.isPending}
+    >
       <Ellipsis className="w-2.5 h-2.5" />
       View More
     </Button>
   );
 }
-function Pool({ poolAddress, leverage = 5 }: { poolAddress: Address; leverage?: number }) {
+function Pool({ poolAddress, leverage = 1 }: { poolAddress: Address; leverage?: number }) {
   const pool = usePool({ poolAddress, protocol: "dlmm" });
   const tokenX = useToken({ mint: pool.mint_x });
   const tokenY = useToken({ mint: pool.mint_y });
@@ -239,7 +266,7 @@ function Size({ poolAddress, positionPubkey }: { poolAddress: Address; positionP
 
   const totalUsd = usdX + usdY;
 
-  return <div className="text-text text-xs font-normal">{formatUsdValue(totalUsd * 5)}</div>;
+  return <div className="text-text text-xs font-normal">{formatUsdValue(totalUsd)}</div>;
 }
 function Range({
   poolAddress,
@@ -358,6 +385,8 @@ function PnL({
     poolAddress,
     positionPubkey,
   });
+
+  const claimedFeesActivities = useQuery(api.tables.activities.get.getClaimedFeesByPosition, { positionPubkey });
   if (!onChainPosition)
     return (
       <div className="flex flex-col space-y-px">
@@ -402,8 +431,15 @@ function PnL({
   // -----------------------------
   // Realized vs Unrealized
   // [We track claimed fees separately later]
-  // -----------------------------
-  const realizedFeesUsd = 0; // TODO: modify when claim fees is live
+  // -----------------------------=
+  const realizedFeesUsd =
+    claimedFeesActivities?.reduce((acc, act) => {
+      if (act.type !== "claim_fees") return acc;
+      const { rawAmount, mint, usdPrice } = act.details.harvested;
+      const decimals = tokensMetadata[mint]?.decimals;
+      if (decimals == null) return acc;
+      return acc + rawAmountToAmount(rawAmount, decimals) * usdPrice;
+    }, 0) ?? 0;
   //we will have add liquidity and remove liquidity here
 
   // Unrealized PnL includes:
@@ -440,7 +476,7 @@ function PnL({
 
       {/* Fees */}
       <div className="text-textSecondary text-xs font-normal">
-        {formatUsdValue(unrealizedFeesUsd, { maximumFractionDigits: 5 })} in fees
+        {formatUsdValue(realizedFeesUsd + realizedFeesUsd, { maximumFractionDigits: 5 })} in fees
       </div>
     </div>
   );

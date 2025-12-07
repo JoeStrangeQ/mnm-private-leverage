@@ -107,8 +107,10 @@ export function ActionTracker() {
         {trackers.map((t) => {
           if (t.type === "create_position") {
             return <CreatePositionTracker key={t.id} tracker={t} onClose={() => removeTracker(t.id)} />;
-          }else if (t.type==='close_position'){
-            return <ClosePositionTracker key={t.id} tracker={t} onClose={()=>removeTracker(t.id)}/>
+          } else if (t.type === "close_position") {
+            return <ClosePositionTracker key={t.id} tracker={t} onClose={() => removeTracker(t.id)} />;
+          } else if (t.type === "claim_fees") {
+            return <ClaimFeesTracker key={t.id} tracker={t} onClose={() => removeTracker(t.id)} />;
           }
           return null;
         })}
@@ -159,7 +161,7 @@ function TrackerToast({
   );
 }
 
-export function CreatePositionTracker({
+function CreatePositionTracker({
   tracker,
   onClose,
 }: {
@@ -207,7 +209,7 @@ export function CreatePositionTracker({
   );
 }
 
-export function ClosePositionTracker({
+function ClosePositionTracker({
   tracker,
   onClose,
 }: {
@@ -249,6 +251,54 @@ export function ClosePositionTracker({
     <TrackerToast status="loading" onClose={onClose}>
       <div className="flex flex-col items-start justify-start gap-1 max-w-[340px]">
         <div className="text-text text-sm leading-none">Closing Position</div>
+        <div className="text-textSecondary text-xs">{loadingDescription}</div>
+      </div>
+    </TrackerToast>
+  );
+}
+
+function ClaimFeesTracker({
+  tracker,
+  onClose,
+}: {
+  tracker: Extract<Tracker, { type: "claim_fees" }>;
+  onClose: () => void;
+}) {
+  const { status, loadingDescription, errorMsg } = tracker;
+
+  if (status === "success") {
+    const { claimFeeTxId } = tracker.result;
+    return (
+      <TrackerToast status="success" onClose={onClose}>
+        <div className="flex flex-col items-start justify-start gap-2 max-w-[340px] ">
+          <div className="text-text text-sm leading-none">Fees Claimed!</div>
+          <div
+            className="flex flex-row items-center gap-0.5 group cursor-pointer active:scale-95"
+            onClick={() => window.open(`https://solscan.io/tx/${claimFeeTxId}`, "_blank")}
+          >
+            <ArrowUpRight className="w-3 h-3 text-primary" />
+            <div className="text-primary text-xs group-hover:underline">View transaction</div>
+          </div>
+        </div>
+      </TrackerToast>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <TrackerToast status="failed" onClose={onClose}>
+        <div className="flex flex-col items-start justify-start gap-1 max-w-[340px]">
+          <div className="text-text text-sm leading-none">Failed To Claim Fees</div>
+          <div className="text-textSecondary text-xs wrap-break-word">{errorMsg}</div>
+        </div>
+      </TrackerToast>
+    );
+  }
+
+  return (
+    <TrackerToast status="loading" onClose={onClose}>
+      <div className="flex flex-col items-start justify-start gap-1 max-w-[340px]">
+        <div className="text-text text-sm leading-none">Claiming Fees</div>
         <div className="text-textSecondary text-xs">{loadingDescription}</div>
       </div>
     </TrackerToast>
