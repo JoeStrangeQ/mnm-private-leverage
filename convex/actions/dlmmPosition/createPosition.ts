@@ -126,10 +126,12 @@ export const createPosition = action({
 
       const [{ txIds, bundleId }, tokenPrices] = await Promise.all([sendBundle, getTokenPrices]);
       const createPositionTxId = txIds[txIds.length - 2];
-      const txsConfirmRes = await fastTransactionConfirm([createPositionTxId], 7_000);
+      const txsConfirmRes = await fastTransactionConfirm([createPositionTxId], 10_000);
 
       if (txsConfirmRes[0].err) {
-        throw new Error(`Transaction ${txsConfirmRes[0].signature} failed: ${JSON.stringify(txsConfirmRes[0].err)}`);
+        throw new Error(
+          `Transaction ${txsConfirmRes[0].signature} failed: ${JSON.stringify(txsConfirmRes[0].err ?? "couldn't confirm the transaction")}`
+        );
       }
       console.time("db");
 
@@ -236,7 +238,7 @@ export const createPosition = action({
       console.error("CreatePosition failed:", error);
       return {
         status: "failed",
-        errorMsg: error.message ?? "Something went wrong while creating the position.",
+        errorMsg: error?.message ?? "Something went wrong while creating the position.",
       };
     }
   },

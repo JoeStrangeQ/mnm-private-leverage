@@ -1,7 +1,12 @@
 import { Infer, v } from "convex/values";
 import { vPositionType, vTokenAmount } from "./positions";
 
-export const vActivityType = v.union(v.literal("create_position"), v.literal("close_position"), v.literal("transfer"));
+export const vActivityType = v.union(
+  v.literal("create_position"),
+  v.literal("close_position"),
+  v.literal("claim_fees"),
+  v.literal("transfer")
+);
 export const vTriggerType = v.union(v.literal("manual"), v.literal("sl"), v.literal("tp"));
 export const vTransactionId = v.object({
   description: v.string(),
@@ -23,6 +28,20 @@ export const vCreatePositionActivityDetails = v.object({
   poolAddress: v.string(),
   collateral: vTokenAmount,
   range: v.string(),
+});
+
+export const vClaimFeesDetails = v.object({
+  positionType: vPositionType,
+  poolAddress: v.string(),
+
+  compoundedRawAmounts: v.object({
+    tokenX: v.number(),
+    tokenY: v.number(),
+  }),
+  claimedX: vTokenAmount,
+  claimedY: vTokenAmount,
+  harvested: vTokenAmount,
+  autoTriggered: v.boolean(),
 });
 
 export const vClosePositionDetails = v.object({
@@ -73,6 +92,10 @@ export const vActivityInput = v.union(
     ...createActivityInputVariant(vClosePositionDetails).fields,
   }),
   v.object({
+    type: v.literal("claim_fees"),
+    ...createActivityInputVariant(vClaimFeesDetails).fields,
+  }),
+  v.object({
     type: v.literal("transfer"),
     ...createActivityInputVariant(vTransferActivityDetails).fields,
   })
@@ -93,6 +116,7 @@ function createActivityVariant<T extends ActivityType, D extends ReturnType<type
 export const vActivity = v.union(
   createActivityVariant("create_position", vCreatePositionActivityDetails),
   createActivityVariant("close_position", vClosePositionDetails),
+  createActivityVariant("claim_fees", vClaimFeesDetails),
   createActivityVariant("transfer", vTransferActivityDetails)
 );
 
