@@ -187,7 +187,7 @@ export const createPosition = action({
       }
 
       let positionPubkey: Address;
-      let loanAddress: Address | undefined = undefined;
+      let loanAddress: Address | undefined;
       const createPositionTransactions: VersionedTransaction[] = [];
       if (args.borrowQuote && args.borrowQuote.leverage > 1) {
         const { wrapSolTx } = buildWrapSolTx({
@@ -343,12 +343,13 @@ export const createPosition = action({
             poolAddress,
             positionPubkey,
             poolEntryPrice: args.poolEntryPrice,
+            leverage: args.borrowQuote?.leverage ?? 1,
+            loanAddress,
             details: {
               autoCompoundSplit: args.autoCompoundSplit,
               lowerBin: lowerBin,
               upperBin: upperBin,
               liquidityStrategy: liquidityShape,
-              loanAddress,
             },
             ...tokenDetails,
           },

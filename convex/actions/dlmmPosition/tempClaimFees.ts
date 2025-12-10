@@ -1,6 +1,6 @@
 "use node";
 import { v } from "convex/values";
-import { authenticateUser } from "../../privy";
+import { authenticateUser, CHAIN_ID_MAINNET, privy, privyAuthContext } from "../../privy";
 import { ActionRes } from "../../types/actionResults";
 import { action } from "../../_generated/server";
 import { api, internal } from "../../_generated/api";
@@ -49,23 +49,38 @@ export const claimFees = action({
       const yMint = toAddress(position.tokenY.mint);
       const outputMint = toAddress(position.collateral.mint);
 
-      const { blockhash } = await connection.getLatestBlockhash();
-      const { tipTx, cuPriceMicroLamports, cuLimit } = await buildTipTx({
-        speed: "low",
-        payerAddress: userWallet.address,
-        recentBlockhash: blockhash,
-      });
-
       const { claimTx, xClaimed, yClaimed } = await buildAndSimulateClaimFeeTx({
         userAddress,
         dlmmPoolConn,
         onChainPosition,
         loanAddress: position.loanAddress ? toAddress(position.loanAddress) : undefined,
         options: {
-          cuLimit,
-          cuPriceMicroLamports,
-          recentBlockhash: blockhash,
+          recentBlockhash: (await connection.getLatestBlockhash()).blockhash,
         },
+      });
+
+      const { hash } = await privy
+        .wallets()
+        .solana()
+        .signAndSendTransaction(userWallet.id ?? "", {
+          caip2: CHAIN_ID_MAINNET,
+          transaction: claimTx.serialize(),
+          authorization_context: privyAuthContext,
+        });
+
+      try {
+        await fastTransactionConfirm([hash], 10_000);
+      } catch (error) {
+        return {
+          status: "failed",
+          errorMsg: "Transaction failed",
+        };
+      }
+      const { blockhash } = await connection.getLatestBlockhash();
+      const { tipTx } = await buildTipTx({
+        speed: "low",
+        payerAddress: userWallet.address,
+        recentBlockhash: blockhash,
       });
 
       const swapSpecs: SwapSpec[] = [
@@ -79,7 +94,7 @@ export const claimFees = action({
           return buildJupSwapTransaction({
             userAddress,
             inputMint,
-            inputAmount: safeBigIntToNumber(amount, `Swap ${inputMint}`),
+            inputAmount: safeBigIntToNumber(amount.muln(0.2), `Swap ${inputMint}`),
             outputMint,
             blockhash,
             slippageBps,
@@ -95,10 +110,10 @@ export const claimFees = action({
       }
 
       const transactions: { tx: VersionedTransaction; description: string }[] = [
-        {
-          tx: toVersioned(claimTx),
-          description: "Claim Fees",
-        },
+        // {
+        //   tx: toVersioned(claimTx),
+        //   description: "Claim Fees",
+        // },
         ...swapsRes.data.map(({ tx }, i) => ({
           tx,
           description: `Swap #${i + 1}`,
@@ -155,7 +170,7 @@ export const claimFees = action({
         input: {
           type: "claim_fees",
           relatedPositionPubkey: positionPubkey,
-          transactionIds,
+          transactionIds: [{ id: hash, description: "Claim Fee" }, ...transactionIds],
           bundleId,
           details: {
             autoTriggered: isAutomated,
@@ -183,7 +198,7 @@ export const claimFees = action({
 
       return {
         status: "success",
-        result: { activityId, claimFeeTxId: transactionIds[0].id },
+        result: { activityId, claimFeeTxId: hash },
       };
     } catch (error: any) {
       console.error("Claim fees failed:", error);
@@ -262,6 +277,7 @@ async function buildAndSimulateClaimFeeTx({
 
   const xMint = dlmmPoolConn.lbPair.tokenXMint.toBase58();
   const yMint = dlmmPoolConn.lbPair.tokenYMint.toBase58();
+  console.log("t", simRes.tokenBalancesChange);
   console.log("x claimed", simRes.tokenBalancesChange[xMint].rawAmount.toString());
   console.log("y claimed", simRes.tokenBalancesChange[yMint].rawAmount.toString());
   const xDelta = simRes.tokenBalancesChange[xMint]?.rawAmount ?? new BN(0);

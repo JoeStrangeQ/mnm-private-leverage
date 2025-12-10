@@ -126,7 +126,7 @@ export function DlmmOpenPositionRow({ dbPosition }: { dbPosition: Doc<"positions
       </TableCell>
       <TableCell className="w-0 whitespace-nowrap pl-2">
         <Row justify="end" className="gap-2">
-          <ViewMoreButton positionPubkey={positionPubkey} />
+          <ViewMoreButton positionPubkey={positionPubkey} loanAddress={dbPosition.loanAddress} />
           <ClosePositionButton positionPubkey={positionPubkey} disable={isSlActivated || isTpActivated} />
         </Row>
       </TableCell>
@@ -167,16 +167,23 @@ function ClosePositionButton({ positionPubkey, disable }: { positionPubkey: Addr
   );
 }
 
-function ViewMoreButton({ positionPubkey }: { positionPubkey: Address }) {
+function ViewMoreButton({ positionPubkey, loanAddress }: { positionPubkey: Address; loanAddress?: string }) {
   const claimFees = useAction(api.actions.dlmmPosition.claimFees.claimFees);
+  const leverageClaimFees = useAction(api.actions.dlmmPosition.tempClaimFees.claimFees);
 
   const claimFeesMut = useTanstackMut({
     mutationFn: async () => {
       console.log("Claimming fees");
-      const claimFeesPromise = claimFees({
-        isAutomated: false,
-        positionPubkey,
-      });
+
+      const claimFeesPromise = loanAddress
+        ? leverageClaimFees({
+            isAutomated: false,
+            positionPubkey,
+          })
+        : claimFees({
+            isAutomated: false,
+            positionPubkey,
+          });
 
       startTrackingAction({
         type: "claim_fees",
@@ -476,7 +483,7 @@ function PnL({
 
       {/* Fees */}
       <div className="text-textSecondary text-xs font-normal">
-        {formatUsdValue(realizedFeesUsd + realizedFeesUsd, { maximumFractionDigits: 5 })} in fees
+        {formatUsdValue(unrealizedFeesUsd + realizedFeesUsd, { maximumFractionDigits: 5 })} in fees
       </div>
     </div>
   );

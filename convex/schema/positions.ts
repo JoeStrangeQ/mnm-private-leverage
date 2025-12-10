@@ -18,7 +18,6 @@ const vDLMMDetails = v.object({
   upperBin: vBinIdAndPrice,
   liquidityStrategy: vLiquidityShape,
   autoCompoundSplit: v.number(),
-  loanAddress: v.optional(v.string()),
 });
 
 const vPositionDetails = v.union(vDLMMDetails);
@@ -36,7 +35,9 @@ export const vPosition = v.object({
 
   details: vPositionDetails,
   //TODO: add leverage details here , this should be global and applied to all of the position the same way
-  leverage: v.optional(v.null()),
+  leverage: v.optional(v.number()),
+  loanAddress: v.optional(v.string()),
+
   closedAt: v.optional(v.number()),
   isActive: v.boolean(),
 });
