@@ -11,6 +11,7 @@
 import type * as actions_dlmmPosition_claimFees from "../actions/dlmmPosition/claimFees.js";
 import type * as actions_dlmmPosition_createPosition from "../actions/dlmmPosition/createPosition.js";
 import type * as actions_dlmmPosition_removeLiquidity from "../actions/dlmmPosition/removeLiquidity.js";
+import type * as actions_dlmmPosition_tempClaimFees from "../actions/dlmmPosition/tempClaimFees.js";
 import type * as actions_fetch_dlmm from "../actions/fetch/dlmm.js";
 import type * as actions_fetch_tokenMetadata from "../actions/fetch/tokenMetadata.js";
 import type * as actions_fetch_tokenPrices from "../actions/fetch/tokenPrices.js";
@@ -67,6 +68,7 @@ declare const fullApi: ApiFromModules<{
   "actions/dlmmPosition/claimFees": typeof actions_dlmmPosition_claimFees;
   "actions/dlmmPosition/createPosition": typeof actions_dlmmPosition_createPosition;
   "actions/dlmmPosition/removeLiquidity": typeof actions_dlmmPosition_removeLiquidity;
+  "actions/dlmmPosition/tempClaimFees": typeof actions_dlmmPosition_tempClaimFees;
   "actions/fetch/dlmm": typeof actions_fetch_dlmm;
   "actions/fetch/tokenMetadata": typeof actions_fetch_tokenMetadata;
   "actions/fetch/tokenPrices": typeof actions_fetch_tokenPrices;

@@ -274,6 +274,36 @@ export async function repayLoan({
   return LoopscaleRepayResponseZ.parse(responseData);
 }
 
+export async function loopscaleClaimDlmmFees({
+  userAddress,
+  loanAddress,
+  positionPubkey,
+}: {
+  userAddress: Address;
+  loanAddress: Address;
+  positionPubkey: Address;
+}) {
+  const requestBody = {
+    loan: loanAddress,
+    positionAddress: positionPubkey,
+  };
+  const response = await fetch(`${LOOPSCALE_BASE_URL}/markets/creditbook/collateral/dlmm/claim_fees`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "user-wallet": userAddress,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(`Loopscale repay API error: ${response.status}: ${errorText}`);
+  }
+
+  const responseData = await response.json();
+  return TransactionZ.parse(responseData);
+}
 export function toStrategyType({
   liquidityShape,
   xRawAmount,
